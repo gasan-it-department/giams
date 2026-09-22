@@ -1,0 +1,142 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   Printing the forms
+
+   The screens reproduce the office's own forms; this makes the paper match.
+   Three problems had to be solved, and the first is the one that mattered:
+
+   1. The application is a fixed-height shell with its own scrolling regions
+      (h-screen, overflow-hidden). Printed as-is, only the first screenful
+      reaches the paper and the rest is silently cut off — a General Journal
+      would print its first fourteen lines and stop. Every one of those
+      containers is unwound below.
+
+   2. The chrome — sidebar, top bar, period picker, toolbars, tabs, paging —
+      is for working, not for filing. It is marked `no-print` and removed.
+
+   3. A form that leaves this system is signed. The certification blocks are
+      `print-only`: absent from the screen, where they would only be clutter,
+      and present on every printed copy, where they are the point.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Hidden on screen; restored inside the print block below. */
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* ── Undo the scrolling shell ──────────────────────────────────────────── */
+  html,
+  body,
+  #root {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  /* Any flex/grid/scroll container between the root and the form. Tailwind
+     utilities are matched by attribute because the markup is utility-driven
+     and there is no stable class to hook. */
+  [class*="overflow-hidden"],
+  [class*="overflow-auto"],
+  [class*="overflow-y-auto"],
+  [class*="h-screen"],
+  [class*="min-h-0"] {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* ── Remove what is not part of the form ───────────────────────────────── */
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  /* ── Ink ───────────────────────────────────────────────────────────────── */
+  body {
+    color: #000 !important;
+    font-size: 10pt;
+    line-height: 1.35;
+  }
+
+  /* Panels become plain paper: no card, no tint, no rounding. */
+  [class*="bg-surface"],
+  [class*="bg-canvas"],
+  [class*="bg-sunken"] {
+    background: #fff !important;
+  }
+
+  [class*="rounded"] {
+    border-radius: 0 !important;
+  }
+
+  /* The heading block and the figures must stay legible in black and white,
+     so the greys are pushed to true black. */
+  [class*="text-ink-secondary"],
+  [class*="text-ink-muted"] {
+    color: #000 !important;
+  }
+
+  /* ── Tables ────────────────────────────────────────────────────────────── */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  /* Column headings repeat at the top of every page. Page four of a journal
+     is unreadable without them. */
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  /* A row split across a page break puts a figure on one page and its account
+     on the next. */
+  tr,
+  li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  th,
+  td {
+    border-color: #000 !important;
+    padding: 3pt 4pt !important;
+  }
+
+  /* Shaded header rows are kept, because the rule under them is what an
+     accountant reads the columns against. */
+  thead tr,
+  .print-keep-fill {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ── Blocks that must not be broken ────────────────────────────────────── */
+  .print-avoid-break,
+  .print-signatures {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* A signature block orphaned onto its own final page looks like a form with
+     something missing. */
+  .print-signatures {
+    break-before: auto;
+  }
+
+  /* ── Links ─────────────────────────────────────────────────────────────── */
+  /* Browsers append the URL after a link when printing. On an accounting form
+     that is noise. */
+  a[href]::after {
+    content: none !important;
+  }
+}

@@ -1,0 +1,207 @@
+@import 'tailwindcss';
+@import './styles/print.css';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GIAMS design tokens
+   ═══════════════════════════════════════════════════════════════════════════
+   Direction: Gmail. Clean, mature, professional. Calm neutrals, one soft blue
+   family, hierarchy built from weight and background tone rather than colour.
+
+   The one hard rule: NO SHADOWS, NO ELEVATION. Rather than trusting a code
+   review to catch it, the shadow utilities are removed from the framework
+   below — `shadow-md` and friends simply do not exist in this project. The
+   only permitted depth cue is the focus ring, which is an accessibility
+   affordance and is built from `outline`, not `box-shadow`.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  /* ── Surfaces ───────────────────────────────────────────────────────────
+     Three steps, all very close together. Gmail's page canvas is a faint
+     blue-grey and its panels are pure white; the small gap between them is
+     what replaces a drop shadow. */
+  --color-canvas:        #f8fafd;  /* page background                       */
+  --color-surface:       #ffffff;  /* panels, cards, the list container     */
+  --color-sunken:        #f2f6fc;  /* completed rows, muted regions         */
+  --color-hover:         #eff3f9;  /* row hover                             */
+
+  /* ── Lines ─────────────────────────────────────────────────────────────── */
+  --color-line:          #e1e3e1;  /* default hairline                      */
+  --color-line-strong:   #c4c7c5;  /* table rules, emphasis                 */
+
+  /* ── Text ───────────────────────────────────────────────────────────────
+     Near-black, never pure #000 — full black on white vibrates and is
+     tiring over an eight-hour shift. */
+  --color-ink:           #1f1f1f;
+  --color-ink-secondary: #444746;
+  --color-ink-muted:     #747775;
+
+  /* ── Accent ─────────────────────────────────────────────────────────────
+     Soft tinted fills, not saturated ones. Gmail's Compose button is a pale
+     wash, and that restraint is what makes the whole screen feel calm.
+     `accent-solid` exists only for small marks such as a tab underline. */
+  --color-accent-fill:   #c2e7ff;  /* primary button background             */
+  --color-accent-ink:    #001d35;  /* text on accent-fill                   */
+  --color-accent-soft:   #d3e3fd;  /* active navigation pill                */
+  --color-accent-soft-ink: #041e49;
+  --color-accent-solid:  #0b57d0;  /* underlines, focus ring, links         */
+  --color-search:        #eaf1fb;  /* search field background               */
+
+  /* ── Status ─────────────────────────────────────────────────────────────
+     Used for meaning only, never decoration. Each is a pale fill with a dark
+     companion so it reads at small sizes without a border. */
+  --color-ok-fill:       #e6f4ea;
+  --color-ok-ink:        #0d652d;
+  --color-warn-fill:     #fef7e0;
+  --color-warn-ink:      #8c5a00;
+  --color-danger-fill:   #fce8e6;
+  --color-danger-ink:    #b3261e;
+  --color-info-fill:     #e8f0fe;
+  --color-info-ink:      #174ea6;
+
+  /* ── Type ───────────────────────────────────────────────────────────────
+     14px base. Anything smaller reads as legacy government software. */
+  --font-sans: 'Inter var', 'Inter', 'Segoe UI Variable Text', 'Segoe UI',
+               system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', ui-monospace, monospace;
+
+  --text-xs:   0.75rem;   /* 12px — metadata only                           */
+  --text-sm:   0.8125rem; /* 13px — secondary                               */
+  --text-base: 0.875rem;  /* 14px — the working size                        */
+  --text-lg:   1rem;      /* 16px                                           */
+  --text-xl:   1.375rem;  /* 22px — page titles                             */
+
+  /* ── Radius ─────────────────────────────────────────────────────────────
+     Generous. Rounding is what carries the "modern product" feel once
+     shadows are off the table. */
+  --radius-sm:   0.375rem;
+  --radius-md:   0.75rem;
+  --radius-lg:   1rem;
+  --radius-xl:   1.75rem;
+  --radius-pill: 9999px;
+
+  /* ── Shadows: deliberately removed ──────────────────────────────────────
+     Clearing the namespace deletes every `shadow-*` utility Tailwind would
+     otherwise generate. Writing `shadow-lg` in a component is now a build-time
+     unknown-class, not a style someone has to notice in review. */
+  --shadow-*: initial;
+  --drop-shadow-*: initial;
+  --inset-shadow-*: initial;
+}
+
+/* ── Dark mode ────────────────────────────────────────────────────────────
+   Some staff start before sunrise and finish after dark. Same tokens,
+   re-pointed; no component knows which mode it is in. */
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      color-scheme: dark;
+      --color-canvas:          #131314;
+      --color-surface:         #1e1f20;
+      --color-sunken:          #282a2c;
+      --color-hover:           #2d2f31;
+      --color-line:            #3c4043;
+      --color-line-strong:     #5f6368;
+      --color-ink:             #e3e3e3;
+      --color-ink-secondary:   #c4c7c5;
+      --color-ink-muted:       #9aa0a6;
+      --color-accent-fill:     #004a77;
+      --color-accent-ink:      #c2e7ff;
+      --color-accent-soft:     #0842a0;
+      --color-accent-soft-ink: #d3e3fd;
+      --color-accent-solid:    #a8c7fa;
+      --color-search:          #2d2f31;
+      --color-ok-fill:         #0d3b1c;
+      --color-ok-ink:          #a8dab5;
+      --color-warn-fill:       #3f2e00;
+      --color-warn-ink:        #fdd663;
+      --color-danger-fill:     #4a1512;
+      --color-danger-ink:      #f2b8b5;
+      --color-info-fill:       #0c2d5e;
+      --color-info-ink:        #a8c7fa;
+    }
+  }
+
+  html {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+  }
+
+  body {
+    margin: 0;
+    font-size: var(--text-base);
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Focus ring. Built from `outline` rather than `box-shadow` so it survives
+     the shadow namespace being cleared, and so it is never clipped by an
+     ancestor's overflow. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent-solid);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Money is always rendered with tabular figures so digits line up down a
+     column. Applied by the `<Amount>` component; declared here so it holds
+     even if an amount is ever rendered as plain text. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /* ── List rows ──────────────────────────────────────────────────────────
+     Every row in every register uses this. Gmail separates its rows with a
+     hairline; without one a long list reads as floating text with no sense of
+     where one record ends and the next begins.
+
+     The last row's rule is removed so the list does not appear cut off, and
+     the divider sits *above* the hover fill so hovering does not make the
+     boundary vanish. */
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    min-height: 40px;
+    border-bottom: 1px solid var(--color-line);
+  }
+
+  .row:last-child {
+    border-bottom: 0;
+  }
+
+  .row:hover {
+    background: var(--color-hover);
+  }
+
+  /* A row that needs the reader's action. Weight, not colour — the same
+     mechanic Gmail uses for unread mail. */
+  .row-needs-action {
+    font-weight: 500;
+  }
+
+  /* A row whose work is finished: quieter, on a tinted ground. */
+  .row-done {
+    background: var(--color-sunken);
+    color: var(--color-ink-secondary);
+  }
+
+  /* Groups a run of rows so the outer edge is a single clean boundary. */
+  .row-list {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  ::selection {
+    background: var(--color-accent-soft);
+    color: var(--color-accent-soft-ink);
+  }
+}

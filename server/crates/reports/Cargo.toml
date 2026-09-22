@@ -1,0 +1,16 @@
+[package]
+name    = "giams-reports"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+# PDF (Typst) and XLSX (rust_xlsxwriter) generation arrive in phase 7 with the
+# financial statements. Kept dependency-free until then rather than carrying
+# unused build weight.
+[dependencies]
+giams-domain = { workspace = true }
+chrono       = { workspace = true }
+serde        = { workspace = true }
+rust_decimal = { workspace = true }
+rust_xlsxwriter = "0.97.1"

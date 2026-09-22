@@ -1,0 +1,46 @@
+# ── Rust ──────────────────────────────────────────────────────────────────────
+/target
+**/*.rs.bk
+
+# ── Node ──────────────────────────────────────────────────────────────────────
+node_modules/
+client/dist/
+client/.vite/
+*.tsbuildinfo
+
+# ── Tauri ─────────────────────────────────────────────────────────────────────
+desktop/gen/
+desktop/target/
+
+# ── Secrets & local config ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!ops/certs/.gitkeep
+ops/certs/*
+
+# ── Local database & dumps ────────────────────────────────────────────────────
+*.dump
+*.sql.gz
+.pgdata/
+
+# ── Working files that hold real data ─────────────────────────────────────────
+# Sign-in details for the development node, a scratch voucher, and a log that
+# records request paths and usernames. None of these belong in a repository.
+CREDENTIALS.txt
+jev.txt
+server.log
+/backups/
+/tls/
+
+# ── Editor / OS ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# The licensing authority private key. Never commit this.
+ops/licensing/*.key
+node-signing.key
