@@ -2,7 +2,7 @@ import { LicenceBanner } from '@/components/LicenceBanner'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
-  BarChart3, BookOpen, Cloud, CloudOff, FileText, Landmark, LayoutDashboard, ListTree, LogOut, Menu, Receipt, Scale, Search, Settings, UploadCloud,
+  BarChart3, BookOpen, Cloud, CloudOff, FileText, Landmark, LayoutDashboard, ListTree, LogOut, Menu, Receipt, Scale, Settings, UploadCloud,
 } from 'lucide-react'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { useNodeHealth } from '@/queries/health'
@@ -13,8 +13,8 @@ import { useDraftStore } from '@/stores/draftStore'
  * The application frame.
  *
  * Gmail's layout, because it is the one this office already knows: a rail of
- * pill-shaped destinations on the left, a wide search field across the top,
- * and the working area as a rounded white panel floating on a faint canvas.
+ * pill-shaped destinations on the left, the period and connection across the
+ * top, and the working area as a rounded white panel floating on a faint canvas.
  *
  * Hierarchy comes from the gap between `canvas` and `surface` and from font
  * weight. There is no shadow anywhere — the utilities do not exist, see
@@ -74,15 +74,8 @@ function TopBar() {
 
       <span className="text-lg font-medium tracking-tight">GIAMS</span>
 
-      <div className="flex min-w-0 max-w-[420px] flex-1 items-center gap-3 rounded-pill bg-search px-4 py-2">
-        <Search className="size-[18px] shrink-0 text-ink-secondary" aria-hidden />
-        <input
-          type="search"
-          placeholder="Search vouchers, payees, accounts"
-          aria-label="Search"
-          className="min-w-0 flex-1 bg-transparent text-ink placeholder:text-ink-muted focus:outline-none"
-        />
-      </div>
+      {/* Search lives on each screen that lists something, scoped to it. */}
+      <div className="flex-1" />
 
       <PeriodPicker />
       <ConnectionBadge />

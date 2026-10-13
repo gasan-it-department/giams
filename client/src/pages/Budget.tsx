@@ -5,6 +5,7 @@ import { Landmark, Plus, X } from 'lucide-react'
 import { ErrorNotice } from '@/components/ErrorNotice'
 import { formatAmount, type Amount } from '@/lib/money'
 import { AccountSelect } from '@/components/AccountSelect'
+import { SearchField } from '@/components/SearchField'
 import { useFunds, useOffices } from '@/queries/accounts'
 import {
   useAppropriations, useCreateAllotment, useCreateAppropriation,
@@ -43,6 +44,15 @@ export function Budget() {
 
   const [recording, setRecording] = useState(false)
   const [releaseFor, setReleaseFor] = useState<Appropriation | null>(null)
+  const [search, setSearch] = useState('')
+
+  // the whole year is already loaded, so this narrows on screen
+  const term = search.trim().toLowerCase()
+  const shown = term
+    ? appropriations?.filter((a) =>
+        [a.ordinance_no, a.office_name, a.account_code, a.account_name, a.expense_class, a.particulars ?? '']
+          .some((field) => field.toLowerCase().includes(term)))
+    : appropriations
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
@@ -97,11 +107,26 @@ export function Budget() {
         )}
 
         {appropriations && appropriations.length > 0 && (
-          <AppropriationTable
-            rows={appropriations}
-            canManage={canManage}
-            onRelease={setReleaseFor}
-          />
+          <>
+            <SearchField
+              value={search}
+              onChange={setSearch}
+              placeholder="Search ordinance, office or account"
+              className="mb-3 w-[340px]"
+            />
+
+            {shown && shown.length > 0 ? (
+              <AppropriationTable
+                rows={shown}
+                canManage={canManage}
+                onRelease={setReleaseFor}
+              />
+            ) : (
+              <p className="py-6 text-center text-ink-secondary">
+                No appropriation matches “{search.trim()}”.
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>

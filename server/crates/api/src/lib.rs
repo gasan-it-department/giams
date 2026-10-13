@@ -79,5 +79,31 @@ pub fn router(state: AppState) -> Router {
         .layer(axum::middleware::from_fn(hardening::security_headers))
         // A body larger than this is refused before it is read into memory.
         .layer(axum::extract::DefaultBodyLimit::max(hardening::MAX_BODY_BYTES))
+        // Outermost, so a preflight is answered before the licence check.
+        .layer(desktop_origins())
         .with_state(state)
+}
+
+/// Lets the installed desktop app call this server.
+///
+/// The app's pages come from its own origin (`http://tauri.localhost` on
+/// Windows, `tauri://localhost` elsewhere), not from this server, so the
+/// browser engine inside it asks first. Only those origins are let in; no
+/// website can call the server this way. Sessions travel in the
+/// Authorization header, never a cookie, so credentials stay off.
+fn desktop_origins() -> tower_http::cors::CorsLayer {
+    use axum::http::{header, HeaderValue, Method};
+    use tower_http::cors::{AllowOrigin, CorsLayer};
+
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list([
+            HeaderValue::from_static("http://tauri.localhost"),
+            HeaderValue::from_static("https://tauri.localhost"),
+            HeaderValue::from_static("tauri://localhost"),
+        ]))
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        // so a saved export keeps the name the server gave it
+        .expose_headers([header::CONTENT_DISPOSITION])
+        .max_age(std::time::Duration::from_secs(600))
 }

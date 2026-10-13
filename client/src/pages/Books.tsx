@@ -40,6 +40,7 @@ const TABS: ListTab[] = [
 
 export function Books() {
   const [tab, setTab] = useState('GJ')
+  const [search, setSearch] = useState('')
   const period = usePeriodRange()
   const navigate = useNavigate()
   const can = useAuthStore((s) => s.can)
@@ -58,7 +59,12 @@ export function Books() {
     <ListPage
       tabs={TABS}
       activeTab={tab}
-      onTabChange={setTab}
+      onTabChange={(key) => { setTab(key); setSearch('') }}
+      search={{
+        value: search,
+        onChange: setSearch,
+        placeholder: tab === 'TB' ? 'Search account number or title' : 'Search JEV number, particulars or account',
+      }}
       total={rowCount}
       pageSize={rowCount ?? 0}
       onRefresh={() => void active.refetch()}
@@ -69,7 +75,7 @@ export function Books() {
           <button
             type="button"
             onClick={() => navigate('/books/new')}
-            className="ml-2 flex items-center gap-2 rounded-pill bg-accent-fill px-3 py-1 text-sm font-medium text-accent-ink hover:brightness-[0.97]"
+            className="ml-2 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-pill bg-accent-fill px-3 py-1 text-sm font-medium text-accent-ink hover:brightness-[0.97]"
           >
             <FilePlus2 className="size-4" aria-hidden />
             New entry
@@ -86,7 +92,7 @@ export function Books() {
         <button
           type="button"
           onClick={printForm}
-          className="ml-2 flex items-center gap-2 rounded-pill px-3 py-1 text-sm hover:bg-hover"
+          className="ml-2 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-pill px-3 py-1 text-sm hover:bg-hover"
         >
           <Printer className="size-4" aria-hidden />
           Print
@@ -98,15 +104,18 @@ export function Books() {
       {active.isPending && <p className="px-4 py-6 text-ink-muted">Loading…</p>}
 
       {tab === 'TB'
-        ? trialBalance.data && <TrialBalanceForm page={trialBalance.data} />
-        : book.data && <JournalForm page={book.data} />}
+        ? trialBalance.data && <TrialBalanceForm page={trialBalance.data} term={search} />
+        : book.data && <JournalForm page={book.data} term={search} />}
     </ListPage>
   )
 }
 
-function JournalForm({ page }: { page: import('@/queries/books').BookPage }) {
+function JournalForm({ page, term }: { page: import('@/queries/books').BookPage; term: string }) {
   // Annex 1 is dated; Annexes 2, 3 and 4 label the signature rule.
   const isGeneralJournal = page.annex === 'Annex 1'
+  const matches = (line: BookLine) => matchesSearch(term, [
+    line.jev_no, line.particulars, line.reference, line.counterparty, line.account_code, line.account_name,
+  ])
 
   return (
     <div className="relative">
@@ -116,6 +125,8 @@ function JournalForm({ page }: { page: import('@/queries/books').BookPage }) {
         municipality={page.municipality}
         lines={[`Fund: ${page.fund_name}`, page.period_label]}
       />
+
+      <SearchNote term={term} shown={page.lines.filter(matches).length} total={page.lines.length} />
 
       {page.lines.length === 0 ? (
         <p className="px-6 py-12 text-center text-ink-secondary">
@@ -135,7 +146,7 @@ function JournalForm({ page }: { page: import('@/queries/books').BookPage }) {
           </thead>
           <tbody>
             {page.lines.map((line, i) => (
-              <JournalRow key={`${line.jev_no}-${i}`} line={line} />
+              <JournalRow key={`${line.jev_no}-${i}`} line={line} hidden={!matches(line)} />
             ))}
           </tbody>
           <tfoot>
@@ -153,9 +164,9 @@ function JournalForm({ page }: { page: import('@/queries/books').BookPage }) {
   )
 }
 
-function JournalRow({ line }: { line: BookLine }) {
+function JournalRow({ line, hidden }: { line: BookLine; hidden: boolean }) {
   return (
-    <tr className="border-b border-line hover:bg-hover">
+    <tr className={`border-b border-line hover:bg-hover ${hidden ? 'hidden print:table-row' : ''}`}>
       <Td className="tabular text-ink-secondary">{line.entry_date}</Td>
       <Td className="tabular">{line.jev_no}</Td>
       <Td className="max-w-0 truncate">
@@ -176,8 +187,9 @@ function JournalRow({ line }: { line: BookLine }) {
   )
 }
 
-function TrialBalanceForm({ page }: { page: import('@/queries/books').TrialBalancePage }) {
+function TrialBalanceForm({ page, term }: { page: import('@/queries/books').TrialBalancePage; term: string }) {
   const balanced = page.difference === '0.00'
+  const matches = (line: TrialBalanceLine) => matchesSearch(term, [line.account_code, line.account_name])
 
   return (
     <div>
@@ -196,6 +208,8 @@ function TrialBalanceForm({ page }: { page: import('@/queries/books').TrialBalan
         </p>
       )}
 
+      <SearchNote term={term} shown={page.lines.filter(matches).length} total={page.lines.length} />
+
       {page.lines.length === 0 ? (
         <p className="px-6 py-12 text-center text-ink-secondary">
           Nothing has been posted as at this date.
@@ -212,7 +226,7 @@ function TrialBalanceForm({ page }: { page: import('@/queries/books').TrialBalan
           </thead>
           <tbody>
             {page.lines.map((line) => (
-              <TrialBalanceRow key={line.account_code} line={line} />
+              <TrialBalanceRow key={line.account_code} line={line} hidden={!matches(line)} />
             ))}
           </tbody>
           <tfoot>
@@ -230,9 +244,9 @@ function TrialBalanceForm({ page }: { page: import('@/queries/books').TrialBalan
   )
 }
 
-function TrialBalanceRow({ line }: { line: TrialBalanceLine }) {
+function TrialBalanceRow({ line, hidden }: { line: TrialBalanceLine; hidden: boolean }) {
   return (
-    <tr className="border-b border-line hover:bg-hover">
+    <tr className={`border-b border-line hover:bg-hover ${hidden ? 'hidden print:table-row' : ''}`}>
       <Td className="max-w-0 truncate">{line.account_name}</Td>
       <Td className="tabular text-ink-secondary">{line.account_code}</Td>
       <Td className="text-right tabular">
@@ -242,5 +256,28 @@ function TrialBalanceRow({ line }: { line: TrialBalanceLine }) {
         {line.credit_balance === '0.00' ? '' : formatAmount(line.credit_balance)}
       </Td>
     </tr>
+  )
+}
+
+// ── Search ───────────────────────────────────────────────────────────────────
+// A book is a form that gets filed, so search only narrows the screen: rows
+// that do not match are hidden here and still print, and the totals stay the
+// whole book's.
+
+function matchesSearch(term: string, fields: (string | null)[]): boolean {
+  const t = term.trim().toLowerCase()
+  return !t || fields.some((f) => f?.toLowerCase().includes(t))
+}
+
+function SearchNote({ term, shown, total }: { term: string; shown: number; total: number }) {
+  if (!term.trim() || total === 0) return null
+
+  return (
+    <p className="no-print border-b border-line bg-info-fill px-6 py-1.5 text-sm text-info-ink">
+      {shown === 0
+        ? `No line matches "${term.trim()}".`
+        : `Showing ${shown} of ${total} lines matching "${term.trim()}".`}
+      {' '}Printing still prints the whole book, and the totals are the whole book's.
+    </p>
   )
 }

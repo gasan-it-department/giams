@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Building2, Loader2, ShieldCheck } from 'lucide-react'
 import { ErrorNotice } from '@/components/ErrorNotice'
+import { ServerChooser } from '@/components/ServerChooser'
 import { ApiError } from '@/lib/api'
 import { loginSchema, type LoginInput } from '@/schemas/auth'
 import { useAuthStore } from '@/stores/authStore'
@@ -101,6 +102,8 @@ export function Login({ variant = 'accounting' }: { variant?: 'accounting' | 'ad
             {isSubmitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        <ServerChooser />
 
         <p className="mt-6 text-center text-sm text-ink-muted">
           If you cannot sign in, contact the Information Technology office.

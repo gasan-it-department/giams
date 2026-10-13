@@ -6,6 +6,8 @@
  * exist in exactly one place.
  */
 
+import { serverUrl } from '@/lib/server'
+
 /** Mirrors `ErrorBody` in `server/crates/api/src/error.rs`. */
 export interface ApiErrorBody {
   /** Stable machine identifier. Branch on it; never show it to a user. */
@@ -149,7 +151,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   let response: Response
   try {
-    response = await fetch(path, {
+    response = await fetch(serverUrl() + path, {
       ...rest,
       headers: {
         'Content-Type': 'application/json',
@@ -225,7 +227,7 @@ async function download(path: string, fallbackName: string, retried = false): Pr
 
   let response: Response
   try {
-    response = await fetch(path, {
+    response = await fetch(serverUrl() + path, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       credentials: 'same-origin',
     })

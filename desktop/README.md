@@ -50,3 +50,25 @@ out on restart, on the one feature whose purpose is surviving restarts. The
 The round-trip test in `src/main.rs` runs against the **real** credential store
 rather than a mock, because a mock would only have proven the mock worked — and
 the mock was the bug.
+
+## Which server it talks to
+
+The app serves its own pages (`http://tauri.localhost`), so it calls the
+office server by address: `127.0.0.1:8787` unless someone picks another on the
+sign-in screen (**Server: … Change**, with **Find on the office network**).
+The choice is kept in the app's local storage. The server lets these origins
+in (`desktop_origins` in `server/crates/api/src/lib.rs`) and nothing else, and
+`connect-src` allows `http:`/`https:` so a server elsewhere on the LAN works.
+
+## `freezePrototype` is off
+
+It was on, and the release build opened to a blank window: ExcelJS (the JEV
+Excel form) assigns `toString` on its own objects while loading, which throws
+once `Object.prototype` is frozen. The browser never froze anything, so only
+the installed app broke. ExcelJS is now also loaded on first export rather
+than at startup.
+
+## Installers
+
+`cargo tauri build` writes both to `../target/release/bundle/`:
+`msi/GIAMS_<version>_x64_en-US.msi` and `nsis/GIAMS_<version>_x64-setup.exe`.

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BookCheck, ChevronDown, ChevronRight, Clock, Inbox, PencilLine } from 'lucide-react'
 import { EmptyList, ListPage, Row, type ListTab } from '@/components/ListPage'
 import { ErrorNotice } from '@/components/ErrorNotice'
+import { useDebounced } from '@/components/SearchField'
 import { formatAmount } from '@/lib/money'
 import {
   useAdvanceVoucher, usePostVoucher, useVoucherDeductions, useVouchers,
@@ -31,10 +32,13 @@ export function Vouchers() {
   const [tab, setTab] = useState('all')
   const [expanded, setExpanded] = useState<string | null>(null)
   const period = usePeriodRange()
+  const [search, setSearch] = useState('')
+  const term = useDebounced(search.trim())
 
   const filter = {
     fiscal_year: period.fiscalYear,
     ...(tab === 'all' ? {} : { status: tab }),
+    ...(term ? { search: term } : {}),
   }
   const { data: vouchers, error, isPending, isFetching, refetch } = useVouchers(filter)
 
@@ -61,6 +65,11 @@ export function Vouchers() {
       total={vouchers?.length}
       onRefresh={() => void refetch()}
       refreshing={isFetching}
+      search={{
+        value: search,
+        onChange: (v) => { setSearch(v); setExpanded(null) },
+        placeholder: 'Search DV number, payee or particulars',
+      }}
     >
       {error && <div className="p-4"><ErrorNotice error={error} /></div>}
       {advance.error && <div className="p-4"><ErrorNotice error={advance.error} /></div>}
@@ -69,10 +78,17 @@ export function Vouchers() {
       {isPending && <p className="px-4 py-6 text-ink-muted">Loading…</p>}
 
       {vouchers?.length === 0 && (
-        <EmptyList
-          title="Nothing here."
-          body="A voucher is raised against an obligation request once the Budget Officer and the Accountant have both certified it."
-        />
+        term ? (
+          <EmptyList
+            title={`No voucher matches "${term}".`}
+            body="Search by DV number, payee name or a word from the particulars."
+          />
+        ) : (
+          <EmptyList
+            title="Nothing here."
+            body="A voucher is raised against an obligation request once the Budget Officer and the Accountant have both certified it."
+          />
+        )
       )}
 
       {vouchers?.map((v) => (

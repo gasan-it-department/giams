@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs'
+import type ExcelJS from 'exceljs'
 import type { Amount } from '@/lib/money'
 
 /**
@@ -107,7 +107,9 @@ async function loadTemplate(): Promise<ExcelJS.Workbook> {
     throw new Error('The form template could not be loaded. Reload the page and try again.')
   }
   const buffer = await response.arrayBuffer()
-  const workbook = new ExcelJS.Workbook()
+  // loaded on first export rather than at startup: it is most of the bundle
+  const { default: Excel } = await import('exceljs')
+  const workbook = new Excel.Workbook()
   await workbook.xlsx.load(buffer)
   return workbook
 }

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, MoreVertical, RefreshCw, Square } from 'lucide-react'
+import { SearchField } from '@/components/SearchField'
 
 /**
  * The chrome every register sits in.
@@ -12,9 +13,9 @@ import { ChevronLeft, ChevronRight, MoreVertical, RefreshCw, Square } from 'luci
  *     you are looking at your inbox. The navigation on the left already said
  *     so, and a heading plus a sentence of explanation pushes the first row
  *     a hundred pixels down the screen for nothing.
- *   * **A toolbar, not a search box.** Search lives once, in the top bar.
- *     Repeating it inside every screen is what made these look like a generic
- *     admin panel.
+ *   * **Search sits in the toolbar, per register.** A single box in the top
+ *     bar promised to search everything and searched nothing; each register
+ *     now searches what it lists.
  *   * **The count sits on the right of the toolbar**, as "1–50 of 263", not as
  *     a sentence.
  *   * **Tabs carry the filters**, with an underline on the active one.
@@ -48,12 +49,14 @@ interface ListPageProps {
   refreshing?: boolean
   /** Actions that belong beside the toolbar, e.g. a filter chip row. */
   toolbar?: ReactNode
+  /** This register's search box. */
+  search?: { value: string; onChange: (value: string) => void; placeholder: string }
   children: ReactNode
 }
 
 export function ListPage({
   tabs, activeTab, onTabChange, total, page = 0, pageSize = 20, onPageChange,
-  onRefresh, refreshing, toolbar, children,
+  onRefresh, refreshing, toolbar, search, children,
 }: ListPageProps) {
   const first = total === 0 ? 0 : page * pageSize + 1
   const last = Math.min((page + 1) * pageSize, total ?? 0)
@@ -84,11 +87,20 @@ export function ListPage({
           <MoreVertical className="size-[18px]" aria-hidden />
         </button>
 
+        {search && (
+          <SearchField
+            value={search.value}
+            onChange={search.onChange}
+            placeholder={search.placeholder}
+            className="ml-1 w-[320px] min-w-[180px] shrink"
+          />
+        )}
+
         {toolbar}
 
         {total !== undefined && (
-          <div className="ml-auto flex items-center gap-1">
-            <span className="text-xs tabular">
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <span className="whitespace-nowrap text-xs tabular">
               {total === 0 ? 'None' : `${first}–${last} of ${total}`}
             </span>
             <button

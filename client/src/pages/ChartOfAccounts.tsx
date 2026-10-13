@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Coins, Landmark, PiggyBank, Receipt, Scale, Wallet } from 'lucide-react'
 import { EmptyList, ListPage, Row, type ListTab } from '@/components/ListPage'
 import { ErrorNotice } from '@/components/ErrorNotice'
+import { useDebounced } from '@/components/SearchField'
 import { PAGE_SIZE, useAccounts } from '@/queries/accounts'
 import {
   ACCOUNT_TYPE_LABELS, type Account, type AccountType,
@@ -32,13 +33,16 @@ export function ChartOfAccounts() {
   const [tab, setTab] = useState('all')
   const [page, setPage] = useState(0)
   const [openId, setOpenId] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const term = useDebounced(search.trim())
 
   const filter = useMemo(
     () => ({
       ...(tab === 'all' ? {} : { account_type: tab as AccountType }),
+      ...(term ? { search: term } : {}),
       ...(page > 0 ? { page } : {}),
     }),
-    [tab, page],
+    [tab, term, page],
   )
 
   const { data, error, isPending, isFetching, refetch } = useAccounts(filter)
@@ -60,16 +64,28 @@ export function ChartOfAccounts() {
       onPageChange={(p) => { setPage(p); setOpenId(null) }}
       onRefresh={() => void refetch()}
       refreshing={isFetching}
+      search={{
+        value: search,
+        onChange: (v) => { setSearch(v); setPage(0); setOpenId(null) },
+        placeholder: 'Search account number or title',
+      }}
     >
       {error && <div className="p-4"><ErrorNotice error={error} /></div>}
 
       {isPending && <p className="px-4 py-6 text-ink-muted">Loading…</p>}
 
       {accounts?.length === 0 && (
-        <EmptyList
-          title="No accounts in this group."
-          body="Try another group, or search by code or name from the bar at the top."
-        />
+        term ? (
+          <EmptyList
+            title={`No account matches "${term}".`}
+            body="Try part of the title, like “depreciation”, or the first digits of the number, like 1-07."
+          />
+        ) : (
+          <EmptyList
+            title="No accounts in this group."
+            body="Try another group, or search by number or title."
+          />
+        )
       )}
 
       {accounts?.map((account) => (

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Check, FileText, Inbox, PenLine } from 'lucide-react'
 import { EmptyList, ListPage, Row, type ListTab } from '@/components/ListPage'
 import { ErrorNotice } from '@/components/ErrorNotice'
+import { useDebounced } from '@/components/SearchField'
 import { formatAmount } from '@/lib/money'
 import {
   useCertifyObligation, useObligations, useRaod,
@@ -21,10 +22,13 @@ export function Obligations() {
   const [tab, setTab] = useState('all')
   const can = useAuthStore((s) => s.can)
   const period = usePeriodRange()
+  const [search, setSearch] = useState('')
+  const term = useDebounced(search.trim())
 
   const filter = {
     fiscal_year: period.fiscalYear,
     ...(tab === 'all' ? {} : { status: tab }),
+    ...(term ? { search: term } : {}),
   }
 
   const { data: obligations, error, isPending, isFetching, refetch } = useObligations(filter)
@@ -51,6 +55,11 @@ export function Obligations() {
       onRefresh={() => void refetch()}
       refreshing={isFetching}
       toolbar={registry && registry.length > 0 ? <RegistryStrip entries={registry} /> : undefined}
+      search={{
+        value: search,
+        onChange: setSearch,
+        placeholder: 'Search ORS number, payee or particulars',
+      }}
     >
       {error && <div className="p-4"><ErrorNotice error={error} /></div>}
       {certify.error && <div className="p-4"><ErrorNotice error={certify.error} /></div>}
@@ -58,10 +67,17 @@ export function Obligations() {
       {isPending && <p className="px-4 py-6 text-ink-muted">Loading…</p>}
 
       {obligations?.length === 0 && (
-        <EmptyList
-          title="Nothing here."
-          body="Obligation requests appear once an office commits against a released allotment."
-        />
+        term ? (
+          <EmptyList
+            title={`No obligation request matches "${term}".`}
+            body="Search by ORS number, payee name or a word from the particulars."
+          />
+        ) : (
+          <EmptyList
+            title="Nothing here."
+            body="Obligation requests appear once an office commits against a released allotment."
+          />
+        )
       )}
 
       {obligations?.map((ob) => (
