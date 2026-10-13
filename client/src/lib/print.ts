@@ -27,7 +27,10 @@ export function usePageSetup(orientation: PageOrientation): void {
   useEffect(() => {
     const style = document.createElement('style')
     style.id = STYLE_ID
-    style.textContent = `@page { size: ${orientation}; margin: 12mm; }`
+    // Tight margins so the form fills the page. 6mm still clears the binding
+    // punch on the left and stays inside the unprintable edge every office
+    // printer keeps.
+    style.textContent = `@page { size: ${orientation}; margin: 6mm; }`
     document.head.append(style)
 
     return () => style.remove()

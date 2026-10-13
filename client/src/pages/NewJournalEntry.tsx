@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Printer, Trash2, X } from 'lucide-react'
+import { FileSpreadsheet, Plus, Printer, Trash2, X } from 'lucide-react'
+import { downloadJevExcel } from '@/lib/excelForms'
 import { ErrorNotice } from '@/components/ErrorNotice'
 import { compareAmounts, formatAmount, isZero, sumAmounts, type Amount } from '@/lib/money'
-import { useAccounts } from '@/queries/accounts'
+import { AccountSelect } from '@/components/AccountSelect'
 import { useFunds } from '@/queries/accounts'
 import { useCreateJournalEntry, usePostJournalEntry } from '@/queries/journalEntries'
 import { useAuthStore } from '@/stores/authStore'
 import { usePeriodRange } from '@/stores/periodStore'
 import { printForm, usePageSetup } from '@/lib/print'
-import { Signatures } from '@/components/Signatures'
+import { JevPrintForm, type JevPrintLine } from '@/components/print/JevPrintForm'
 
 /**
  * Journal Entry Voucher — Annex 23.
@@ -29,6 +30,9 @@ interface DraftLine {
   key: number
   accountId: string
   accountLabel: string
+  /** Kept from the moment the account is chosen, so the code column and the
+      printed voucher never need to look it up again. */
+  accountCode: string
   debit: string
   credit: string
   particulars: string
@@ -44,7 +48,7 @@ const TRANSACTION_TYPES = [
 
 let nextKey = 1
 function blankLine(): DraftLine {
-  return { key: nextKey++, accountId: '', accountLabel: '', debit: '', credit: '', particulars: '' }
+  return { key: nextKey++, accountId: '', accountLabel: '', accountCode: '', debit: '', credit: '', particulars: '' }
 }
 
 export function NewJournalEntry() {
@@ -98,13 +102,44 @@ export function NewJournalEntry() {
 
   usePageSetup('portrait')
 
+  // What the printed voucher shows: only the lines actually filled in, with
+  // the account code resolved. The editor's search boxes and blank starter
+  // rows do not belong on the paper form.
+  const printLines: JevPrintLine[] = lines
+    .filter((l) => l.accountId && (l.debit || l.credit))
+    .map((l) => ({
+      code: l.accountCode,
+      account: l.accountLabel,
+      particulars: l.particulars,
+      debit: (l.debit || '0.00') as Amount,
+      credit: (l.credit || '0.00') as Amount,
+    }))
+
   return (
-    <div className="min-h-0 flex-1 overflow-auto">
+    <>
+    <div className="no-print min-h-0 flex-1 overflow-auto">
       <div className="mx-auto max-w-[900px] px-6 py-5">
         <div className="mb-4 flex items-start justify-between">
           <p className="text-xs text-ink-muted">Annex 23</p>
 
           <div className="no-print flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() =>
+                void downloadJevExcel({
+                  jevNo: null,
+                  date: entryDate,
+                  lines: printLines,
+                  totalDebit,
+                  totalCredit,
+                })
+              }
+              title="Download this voucher as the office's Excel form, ready to print"
+              className="flex items-center gap-2 rounded-pill bg-accent-fill px-3 py-1 text-sm font-medium text-accent-ink hover:brightness-[0.97]"
+            >
+              <FileSpreadsheet className="size-4" aria-hidden />
+              Excel form
+            </button>
             <button
               type="button"
               onClick={printForm}
@@ -243,13 +278,6 @@ export function NewJournalEntry() {
           </p>
         )}
 
-        <Signatures
-          signatories={[
-            { act: 'Prepared by:', role: 'Accounting Staff' },
-            { act: 'Approved by:', role: 'Municipal Accountant' },
-          ]}
-        />
-
         {create.error && <div className="mt-4"><ErrorNotice error={create.error} /></div>}
         {post.error && <div className="mt-4"><ErrorNotice error={post.error} /></div>}
 
@@ -281,6 +309,16 @@ export function NewJournalEntry() {
         </div>
       </div>
     </div>
+
+    <JevPrintForm
+      jevNo={null}
+      date={entryDate}
+      journalType={journalType}
+      lines={printLines}
+      totalDebit={totalDebit}
+      totalCredit={totalCredit}
+    />
+    </>
   )
 }
 
@@ -296,59 +334,13 @@ function EntryLineRow({
   onChange: (patch: Partial<DraftLine>) => void
   onRemove: () => void
 }) {
-  const [search, setSearch] = useState('')
-  const { data } = useAccounts({
-    ...(search.trim().length >= 2 ? { search: search.trim() } : {}),
-    postable_only: true,
-  })
-
-  const showList = search.trim().length >= 2 && !line.accountId
-
   return (
     <tr className="border-b border-line align-top">
       <td className="px-3 py-1.5">
-        {line.accountId ? (
-          <button
-            type="button"
-            onClick={() => { onChange({ accountId: '', accountLabel: '' }); setSearch('') }}
-            className="text-left hover:underline"
-            title="Choose a different account"
-          >
-            {line.accountLabel}
-          </button>
-        ) : (
-          <>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Type an account name or code"
-              className="w-full rounded-sm bg-sunken px-2 py-1"
-            />
-            {showList && (
-              <div className="mt-1 max-h-[168px] overflow-auto rounded-sm border border-line">
-                {data?.items.length === 0 && (
-                  <p className="px-2 py-1.5 text-xs text-ink-muted">
-                    No account matches that. Summary accounts cannot be posted to.
-                  </p>
-                )}
-                {data?.items.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => {
-                      onChange({ accountId: a.id, accountLabel: `${a.name}` })
-                      setSearch('')
-                    }}
-                    className="flex w-full items-baseline gap-2 px-2 py-1 text-left text-xs hover:bg-hover"
-                  >
-                    <code className="tabular text-ink-secondary">{a.code}</code>
-                    <span className="truncate">{a.name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </>
-        )}
+        <AccountSelect
+          value={line.accountId}
+          onChange={(a) => onChange({ accountId: a.id, accountLabel: a.name, accountCode: a.code })}
+        />
 
         <input
           value={line.particulars}
@@ -358,9 +350,7 @@ function EntryLineRow({
         />
       </td>
 
-      <td className="px-3 py-1.5 tabular text-ink-secondary">
-        {line.accountLabel ? <AccountCode id={line.accountId} /> : ''}
-      </td>
+      <td className="px-3 py-1.5 tabular text-ink-secondary">{line.accountCode}</td>
 
       {/* Annex 23 rules a reference column here. It is filled in by hand
           against the source document, so it is printed empty rather than
@@ -390,12 +380,6 @@ function EntryLineRow({
       </td>
     </tr>
   )
-}
-
-/** Shows the code for a chosen account without refetching the whole chart. */
-function AccountCode({ id }: { id: string }) {
-  const { data } = useAccounts({ postable_only: true })
-  return <>{data?.items.find((a) => a.id === id)?.code ?? ''}</>
 }
 
 function AmountCell({ value, onChange }: { value: string; onChange: (v: string) => void }) {

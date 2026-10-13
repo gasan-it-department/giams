@@ -175,7 +175,12 @@ async fn main() -> anyhow::Result<()> {
         uploader,
         licence,
         login_limiter: Arc::new(giams_api::hardening::LoginLimiter::new()),
+        issuer: load_issuer(config.licence_authority_key.as_deref()).map(Arc::new),
+        licence_server: config.licence_server.clone(),
     };
+
+    spawn_renewal_checks(state.clone());
+
     let app = giams_api::router(state).layer(TraceLayer::new_for_http());
 
     let addr: SocketAddr = config.bind.parse().context("GIAMS_BIND is not a valid address")?;
@@ -263,6 +268,15 @@ struct Config {
     /// which is what stops anyone replacing a municipality's signing key.
     enrolment_secret: Option<String>,
     upload_automatically: bool,
+    /// Fixes this municipality's id on a fresh installation. Set from a
+    /// licence profile's server settings, so a key issued for the municipality
+    /// in advance installs here. Ignored once the municipality exists.
+    tenant_id: Option<Uuid>,
+    /// The licensing authority's private key. Only the authority's own server
+    /// has one; with it, the admin console can issue licence keys.
+    licence_authority_key: Option<std::path::PathBuf>,
+    /// The licensing server's address, where renewals are collected from.
+    licence_server: Option<String>,
 }
 
 impl Config {
@@ -289,6 +303,20 @@ impl Config {
             token_secret: std::env::var("GIAMS_TOKEN_SECRET").context(
                 "GIAMS_TOKEN_SECRET is not set — generate one with `openssl rand -base64 48`",
             )?,
+            tenant_id: match std::env::var("GIAMS_TENANT_ID") {
+                Ok(v) if !v.trim().is_empty() => Some(
+                    v.trim().parse().context("GIAMS_TENANT_ID is not a valid municipality id")?,
+                ),
+                _ => None,
+            },
+            licence_authority_key: std::env::var("GIAMS_LICENCE_AUTHORITY_KEY")
+                .ok()
+                .filter(|p| !p.trim().is_empty())
+                .map(std::path::PathBuf::from),
+            licence_server: std::env::var("GIAMS_LICENCE_SERVER")
+                .ok()
+                .map(|u| u.trim().trim_end_matches('/').to_string())
+                .filter(|u| !u.is_empty()),
         })
     }
 }
@@ -302,17 +330,32 @@ impl Config {
 async fn bootstrap_node(pool: &PgPool, config: &Config) -> anyhow::Result<NodeIdentity> {
     let tenant_id: Uuid = sqlx::query_scalar(
         r#"
-        INSERT INTO tenant (code, name)
-             VALUES ($1, $2)
+        INSERT INTO tenant (id, code, name)
+             VALUES (coalesce($3, uuid_generate_v7()), $1, $2)
         ON CONFLICT (code) DO UPDATE SET name = excluded.name
           RETURNING id
         "#,
     )
     .bind(&config.tenant_code)
     .bind(&config.municipality_name)
+    .bind(config.tenant_id)
     .fetch_one(pool)
     .await
     .context("could not establish the municipality record")?;
+
+    // An id only takes effect on a fresh installation. Said out loud when it
+    // did not, because the symptom otherwise is a licence key refused as
+    // "issued to another municipality" with no hint why.
+    if let Some(wanted) = config.tenant_id {
+        if wanted != tenant_id {
+            tracing::warn!(
+                configured = %wanted,
+                actual = %tenant_id,
+                "GIAMS_TENANT_ID differs from this municipality's id, which was set when it was \
+                 first created -- a licence key issued for the configured id will not install here"
+            );
+        }
+    }
 
     let (node_id, name): (Uuid, String) = sqlx::query_as(
         r#"
@@ -385,6 +428,18 @@ async fn seed_roles_and_first_administrator(pool: &PgPool, tenant_id: Uuid) -> a
             accounts = seeded,
             "seeded the Accounting Office chart of accounts"
         );
+    }
+
+    // The rest of the official chart (Annex B), with descriptions. Only adds
+    // what is missing, so it never undoes the office's own edits.
+    let official: i32 = sqlx::query_scalar("SELECT seed_official_chart_of_accounts($1)")
+        .bind(tenant_id)
+        .fetch_one(pool)
+        .await
+        .context("could not set up the official chart of accounts")?;
+
+    if official > 0 {
+        tracing::info!(accounts = official, "added accounts from the official chart");
     }
 
     // Mandatory deductions. Depends on the chart of accounts above for the
@@ -493,6 +548,21 @@ async fn run_command(
             import_opening_balances(pool, tenant_id, &path, &fund, year).await
         }
 
+        "create-user" => {
+            let username = argument.context(
+                "usage: giams-node create-user <username> \"<full name>\" <ROLE>\n\
+                 roles: ADMIN, ACCOUNTANT, STAFF, BUDGET, TREASURY, AUDITOR",
+            )?;
+            let full_name = std::env::args()
+                .nth(3)
+                .context("give the person's full name in quotes, e.g. \"Maria Santos\"")?;
+            let role = std::env::args()
+                .nth(4)
+                .context("which role? one of ADMIN, ACCOUNTANT, STAFF, BUDGET, TREASURY, AUDITOR")?
+                .to_uppercase();
+            create_user(pool, tenant_id, &username, &full_name, &role).await
+        }
+
         "make-cert" => {
             // Every remaining argument is another name or address the server
             // should answer to.
@@ -516,7 +586,8 @@ async fn run_command(
         other => {
             anyhow::bail!(
                 "there is no command called `{other}`. \
-                 Available: reset-password <username>, verify-audit, \
+                 Available: reset-password <username>, \
+                 create-user <username> \"<full name>\" <ROLE>, verify-audit, \
                  backup [folder], make-cert [name or address ...], \
                  import-opening-balances <file.csv> <fund code> <year>"
             )
@@ -824,6 +895,122 @@ fn backup(folder: Option<&str>) -> anyhow::Result<()> {
 /// Recorded in the audit trail with no actor, because whoever ran it had
 /// console access to the server rather than an account in the system. That
 /// distinction matters to an auditor reading the trail later.
+/// Creates a user account and assigns it a role.
+///
+/// This exists because the whole maker-checker design is unusable without it:
+/// the administrator deliberately cannot record accounting entries, so an
+/// office needs Budget Officer, Accountant, Staff and Treasurer logins before
+/// anyone can enter a budget, certify an obligation, or pay a voucher. Creating
+/// people is not a ledger action, so it lives here at the console rather than in
+/// the API, alongside the other things that cannot be done through a sign-in.
+///
+/// The account starts with a one-time password, shown once, that must be
+/// changed at first sign-in — the same rule the first administrator follows.
+async fn create_user(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    username: &str,
+    full_name: &str,
+    role_code: &str,
+) -> anyhow::Result<()> {
+    // The role has to exist before a person can be given it; naming a role that
+    // is not there should fail plainly, not leave an account with no access.
+    let role_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM role WHERE tenant_id = $1 AND code = $2",
+    )
+    .bind(tenant_id)
+    .bind(role_code)
+    .fetch_optional(pool)
+    .await
+    .context("could not look the role up")?;
+
+    let role_id = role_id.with_context(|| {
+        format!(
+            "there is no role called `{role_code}`. \
+             The roles are ADMIN, ACCOUNTANT, STAFF, BUDGET, TREASURY, AUDITOR."
+        )
+    })?;
+
+    let taken: bool = sqlx::query_scalar(
+        "SELECT exists(SELECT 1 FROM app_user WHERE tenant_id = $1 AND username = $2)",
+    )
+    .bind(tenant_id)
+    .bind(username)
+    .fetch_one(pool)
+    .await?;
+
+    if taken {
+        anyhow::bail!(
+            "an account called `{username}` already exists. \
+             To give it a new password, use: giams-node reset-password {username}"
+        );
+    }
+
+    let password = generate_initial_password();
+    let hash = giams_api::auth::password::hash_password(&password)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let mut tx = pool.begin().await?;
+
+    let user_id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO app_user (tenant_id, username, full_name, password_hash,
+                              must_change_password)
+             VALUES ($1, $2, $3, $4, true)
+          RETURNING id
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(username)
+    .bind(full_name)
+    .bind(&hash)
+    .fetch_one(&mut *tx)
+    .await
+    .context("could not create the account")?;
+
+    sqlx::query(
+        "INSERT INTO user_role (tenant_id, user_id, role_id) VALUES ($1, $2, $3)",
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(role_id)
+    .execute(&mut *tx)
+    .await
+    .context("could not give the account its role")?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO audit_log (tenant_id, actor_label, action, entity, entity_id, after)
+             VALUES ($1, 'server console', 'user.create', 'app_user', $2, $3)
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(serde_json::json!({ "username": username, "role": role_code }))
+    .execute(&mut *tx)
+    .await
+    .context("could not record the new account in the audit trail")?;
+
+    tx.commit().await?;
+
+    let role_line = format!("Role:      {role_code}");
+    println!(
+        "\n\
+         ┌────────────────────────────────────────────────────────────────┐\n\
+         │  ACCOUNT CREATED                                               │\n\
+         │                                                                │\n\
+         │    Username:  {username:<49}│\n\
+         │    Password:  {password:<49}│\n\
+         │    {role_line:<60}│\n\
+         │                                                                │\n\
+         │  Shown once and not recoverable. It must be changed at the     │\n\
+         │  first sign-in.                                                │\n\
+         └────────────────────────────────────────────────────────────────┘\n"
+    );
+
+    Ok(())
+}
+
 async fn reset_password(pool: &PgPool, tenant_id: Uuid, username: &str) -> anyhow::Result<()> {
     let user_id: Option<Uuid> =
         sqlx::query_scalar("SELECT id FROM app_user WHERE tenant_id = $1 AND username = $2")
@@ -907,18 +1094,66 @@ async fn reset_password(pool: &PgPool, tenant_id: Uuid, username: &str) -> anyho
 /// Grouped into blocks because somebody has to type this from a screen, and an
 /// unreadable password gets written on a sticky note instead.
 fn generate_initial_password() -> String {
-    use rand::Rng;
-    const ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyz23456789";
-    let mut rng = rand::thread_rng();
+    giams_api::auth::password::generate_one_time_password()
+}
 
-    (0..4)
-        .map(|_| {
-            (0..5)
-                .map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char)
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("-")
+/// Checks the licensing server for renewals, for the life of the process.
+///
+/// Every six hours, and once a minute after starting — a server switched on
+/// the morning after the office paid should not wait until afternoon. A
+/// subscription runs at least a month and locks five days after it ends, so
+/// six hours leaves many chances to collect a renewal before anyone notices.
+fn spawn_renewal_checks(state: AppState) {
+    if state.licence_server.is_none() {
+        tracing::info!("no licensing server is set, so renewals will not be collected automatically");
+        return;
+    }
+
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        loop {
+            let check = giams_api::licensing::check_in(&state).await;
+            match check.outcome {
+                "renewed" => tracing::info!(message = %check.message, "renewal collected"),
+                "current" | "no_licence" => tracing::debug!(message = %check.message, "renewal check"),
+                _ => tracing::warn!(outcome = check.outcome, message = %check.message, "renewal check did not complete"),
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(6 * 60 * 60)).await;
+        }
+    });
+}
+
+/// Loads the licensing authority's key, when this server is meant to issue.
+///
+/// Never fatal. A key that cannot be read, or is not the one this build
+/// trusts, is logged and left out, and the server runs as any municipality's
+/// does. Signing with the wrong key would mint keys no installation accepts,
+/// each one looking fine until an office tried to install it.
+fn load_issuer(path: Option<&std::path::Path>) -> Option<giams_licence::token::AuthorityKey> {
+    use giams_licence::token::{is_authority, signing_key_from_file};
+
+    let path = path?;
+
+    match signing_key_from_file(path) {
+        Ok(key) if is_authority(&key) => {
+            tracing::info!(
+                path = %path.display(),
+                "this server holds the licensing key -- the admin console can issue licence keys"
+            );
+            Some(key)
+        }
+        Ok(_) => {
+            tracing::error!(
+                path = %path.display(),
+                "the licensing key there is not the one this build trusts -- no licence keys will be issued"
+            );
+            None
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "could not load the licensing key -- no licence keys will be issued");
+            None
+        }
+    }
 }
 
 use giams_db::sqlx;

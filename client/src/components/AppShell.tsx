@@ -2,7 +2,7 @@ import { LicenceBanner } from '@/components/LicenceBanner'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
-  BarChart3, BookOpen, Cloud, CloudOff, FileText, LayoutDashboard, ListTree, LogOut, Menu, Receipt, Scale, Search, Settings, UploadCloud,
+  BarChart3, BookOpen, Cloud, CloudOff, FileText, Landmark, LayoutDashboard, ListTree, LogOut, Menu, Receipt, Scale, Search, Settings, UploadCloud,
 } from 'lucide-react'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { useNodeHealth } from '@/queries/health'
@@ -32,6 +32,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { label: 'Overview',    to: '/overview',    icon: LayoutDashboard, permission: 'report.view' },
   { label: 'Accounts',    to: '/accounts',    icon: ListTree,  permission: 'account.view' },
+  { label: 'Budget',      to: '/budget',      icon: Landmark,  permission: 'budget.view' },
   { label: 'Vouchers',    to: '/vouchers',    icon: Receipt,   permission: 'dv.draft' },
   { label: 'Obligations', to: '/obligations', icon: FileText,  permission: 'budget.view' },
   { label: 'Books',       to: '/books',       icon: BookOpen,  permission: 'report.view' },

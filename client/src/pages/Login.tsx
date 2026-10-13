@@ -1,7 +1,7 @@
 import { useState, type InputHTMLAttributes } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Building2, Loader2 } from 'lucide-react'
+import { Building2, Loader2, ShieldCheck } from 'lucide-react'
 import { ErrorNotice } from '@/components/ErrorNotice'
 import { ApiError } from '@/lib/api'
 import { loginSchema, type LoginInput } from '@/schemas/auth'
@@ -13,8 +13,13 @@ import { useAuthStore } from '@/stores/authStore'
  * Field-level messages come from Zod before the round trip; whole-form
  * failures come from the server and are shown verbatim, because the server
  * already phrases them for a clerk (`SIGN_IN_FAILED`, `ACCOUNT_LOCKED`).
+ *
+ * The same accounts sign in to both front doors; `admin` only changes what
+ * the page says it is, so nobody mistakes the administration console for the
+ * accounting system.
  */
-export function Login() {
+export function Login({ variant = 'accounting' }: { variant?: 'accounting' | 'admin' }) {
+  const admin = variant === 'admin'
   const signIn = useAuthStore((s) => s.signIn)
   const [failure, setFailure] = useState<unknown>(null)
 
@@ -50,10 +55,14 @@ export function Login() {
       <div className="w-full max-w-[400px]">
         <div className="mb-8 flex flex-col items-center text-center">
           <div className="mb-4 flex size-14 items-center justify-center rounded-lg bg-accent-fill text-accent-ink">
-            <Building2 className="size-7" aria-hidden />
+            {admin
+              ? <ShieldCheck className="size-7" aria-hidden />
+              : <Building2 className="size-7" aria-hidden />}
           </div>
-          <h1 className="text-xl font-medium">Accounting Management System</h1>
-          <p className="mt-1 text-ink-secondary">Municipality of Gasan</p>
+          <h1 className="text-xl font-medium">{admin ? 'GIAMS Administration' : 'Accounting Management System'}</h1>
+          <p className="mt-1 text-ink-secondary">
+            {admin ? 'Licence keys and user accounts' : 'Municipality of Gasan'}
+          </p>
         </div>
 
         <form

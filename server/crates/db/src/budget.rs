@@ -122,6 +122,196 @@ pub async fn list_appropriations(
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
+/// Reads one appropriation with its released and unreleased amounts.
+///
+/// Shares the projection with [`list_appropriations`] so a row reads the same
+/// whether it was just created or listed. Runs inside a caller's transaction so
+/// a freshly inserted allotment is already reflected in `released`.
+async fn read_appropriation(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: Uuid,
+) -> anyhow::Result<Appropriation> {
+    let row = sqlx::query_as::<_, AppropriationRow>(
+        r#"
+        SELECT ap.id, ap.fund_id, f.name AS fund_name, ap.fiscal_year,
+               ap.ordinance_no, ap.ordinance_date, ap.appropriation_type,
+               ap.office_id, o.name AS office_name,
+               ap.account_id, a.code AS account_code, a.name AS account_name,
+               ap.expense_class::text AS expense_class,
+               ap.amount,
+               coalesce((SELECT sum(al.amount) FROM allotment al
+                          WHERE al.appropriation_id = ap.id), 0) AS released,
+               ap.particulars
+          FROM appropriation ap
+          JOIN fund    f ON f.id = ap.fund_id
+          JOIN office  o ON o.id = ap.office_id
+          JOIN account a ON a.id = ap.account_id
+         WHERE ap.id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_one(&mut **tx)
+    .await
+    .context("the appropriation could not be read back after saving")?;
+
+    Ok(row.into())
+}
+
+/// A new budget line, authorised by a Sanggunian ordinance.
+#[derive(Debug, Deserialize)]
+pub struct NewAppropriation {
+    pub fund_id: Uuid,
+    pub fiscal_year: i16,
+    pub ordinance_no: String,
+    pub ordinance_date: chrono::NaiveDate,
+    pub appropriation_type: String,
+    pub office_id: Uuid,
+    pub account_id: Uuid,
+    pub expense_class: String,
+    /// Arrives as a string and is stored exactly. Never computed client-side.
+    pub amount: Money,
+    pub particulars: Option<String>,
+}
+
+/// Records one appropriation.
+///
+/// This is the front door to the whole budget-execution chain: nothing can be
+/// released, obligated, or paid until the amount the Sanggunian authorised is
+/// on record. The ceiling triggers in migration 0008 measure every later step
+/// against the figure written here.
+pub async fn create_appropriation(
+    pool: &PgPool,
+    scope: Scope,
+    actor_label: &str,
+    input: NewAppropriation,
+) -> anyhow::Result<Appropriation> {
+    let mut tx = scoped(pool, scope).await?;
+
+    let id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO appropriation
+            (tenant_id, fund_id, fiscal_year, ordinance_no, ordinance_date,
+             appropriation_type, office_id, account_id, expense_class, amount,
+             particulars, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::expense_class, $10, $11, $12)
+        RETURNING id
+        "#,
+    )
+    .bind(scope.tenant_id)
+    .bind(input.fund_id)
+    .bind(input.fiscal_year)
+    .bind(input.ordinance_no.trim())
+    .bind(input.ordinance_date)
+    .bind(&input.appropriation_type)
+    .bind(input.office_id)
+    .bind(input.account_id)
+    .bind(&input.expense_class)
+    .bind(input.amount.inner())
+    .bind(input.particulars.as_deref().map(str::trim).filter(|s| !s.is_empty()))
+    .bind(scope.user_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    crate::audit(
+        &mut tx, scope, actor_label, "create", "appropriation", Some(id),
+        None,
+        Some(serde_json::json!({
+            "ordinance_no": input.ordinance_no,
+            "amount": input.amount.to_string(),
+        })),
+        None,
+    )
+    .await?;
+
+    let appropriation = read_appropriation(&mut tx, id).await?;
+    tx.commit().await?;
+    Ok(appropriation)
+}
+
+/// A release of part of an appropriation into a spendable allotment.
+#[derive(Debug, Deserialize)]
+pub struct NewAllotment {
+    pub appropriation_id: Uuid,
+    pub release_date: chrono::NaiveDate,
+    pub amount: Money,
+}
+
+/// Releases an allotment against an appropriation.
+///
+/// The fund, year, expense class, and office are taken from the appropriation,
+/// not the caller: a release belongs to the same fund and class as the amount
+/// it draws on, and letting the client restate them would allow a release
+/// filed under one class to draw down another. The allotment number is
+/// allocated gaplessly, and the ceiling trigger refuses a release that exceeds
+/// what remains unreleased.
+///
+/// Returns the appropriation it was released from, so the caller sees the
+/// released and unreleased amounts move.
+pub async fn create_allotment(
+    pool: &PgPool,
+    scope: Scope,
+    actor_label: &str,
+    input: NewAllotment,
+) -> anyhow::Result<Appropriation> {
+    let mut tx = scoped(pool, scope).await?;
+
+    let (fund_id, fiscal_year, expense_class, office_id): (Uuid, i16, String, Uuid) =
+        sqlx::query_as(
+            "SELECT fund_id, fiscal_year, expense_class::text, office_id
+               FROM appropriation WHERE id = $1",
+        )
+        .bind(input.appropriation_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .context("that appropriation could not be found")?;
+
+    let allotment_no: String =
+        sqlx::query_scalar("SELECT next_document_number($1, 'ALOT', $2::smallint, NULL, $3)")
+            .bind(scope.tenant_id)
+            .bind(fiscal_year)
+            .bind(fund_id)
+            .fetch_one(&mut *tx)
+            .await
+            .context("could not allocate the next allotment number")?;
+
+    let id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO allotment
+            (tenant_id, appropriation_id, allotment_no, release_date, amount,
+             fund_id, fiscal_year, expense_class, office_id, released_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::expense_class, $9, $10)
+        RETURNING id
+        "#,
+    )
+    .bind(scope.tenant_id)
+    .bind(input.appropriation_id)
+    .bind(&allotment_no)
+    .bind(input.release_date)
+    .bind(input.amount.inner())
+    .bind(fund_id)
+    .bind(fiscal_year)
+    .bind(&expense_class)
+    .bind(office_id)
+    .bind(scope.user_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    crate::audit(
+        &mut tx, scope, actor_label, "create", "allotment", Some(id),
+        None,
+        Some(serde_json::json!({
+            "allotment_no": allotment_no,
+            "amount": input.amount.to_string(),
+        })),
+        None,
+    )
+    .await?;
+
+    let appropriation = read_appropriation(&mut tx, input.appropriation_id).await?;
+    tx.commit().await?;
+    Ok(appropriation)
+}
+
 // ── Obligation requests ──────────────────────────────────────────────────────
 
 #[derive(Debug, sqlx::FromRow)]

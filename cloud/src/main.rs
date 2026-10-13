@@ -242,6 +242,7 @@ fn issue_licence() -> anyhow::Result<()> {
         grace_days: 14,
         fingerprint: args.get(6).cloned(),
         features: vec![],
+        people: vec![],
     };
 
     let token = issue(&claims, &signing)?;

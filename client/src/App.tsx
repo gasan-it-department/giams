@@ -1,8 +1,12 @@
 import { useEffect } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
+import { LockedScreen } from '@/components/LockedScreen'
+import { useLicence } from '@/queries/licence'
+import { AdminApp } from '@/pages/admin/AdminApp'
 import { Books } from '@/pages/Books'
+import { Budget } from '@/pages/Budget'
 import { ChangePassword } from '@/pages/ChangePassword'
 import { ChartOfAccounts } from '@/pages/ChartOfAccounts'
 import { Dashboard } from '@/pages/Dashboard'
@@ -28,6 +32,15 @@ import { useAuthStore } from '@/stores/authStore'
 export default function App() {
   const { user, initialising, restore } = useAuthStore()
 
+  // The administration console is its own application at /admin: its own
+  // sign-in page and its own frame, never inside the accounting system's.
+  const { pathname } = useLocation()
+  const inAdmin = pathname === '/admin' || pathname.startsWith('/admin/')
+
+  // Read before any early return, as hooks must be; only fetched once someone
+  // is signed in to the accounting system.
+  const { data: licence } = useLicence(!!user && !user.must_change_password && !inAdmin)
+
   useEffect(() => {
     void restore()
   }, [restore])
@@ -44,7 +57,7 @@ export default function App() {
   }
 
   if (!user) {
-    return <Login />
+    return <Login variant={inAdmin ? 'admin' : 'accounting'} />
   }
 
   // In front of the application, not beside it. Until the password an
@@ -55,6 +68,17 @@ export default function App() {
     return <ChangePassword />
   }
 
+  if (inAdmin) {
+    return <AdminApp />
+  }
+
+  // Past the grace days, the accounting system gives way to the lock screen.
+  // The server refuses its requests anyway; this is so nobody is left
+  // clicking menus that can only fail.
+  if (licence?.state === 'locked') {
+    return <LockedScreen status={licence} />
+  }
+
   return (
     <AppShell>
       <Routes>
@@ -62,6 +86,7 @@ export default function App() {
         <Route path="/accounts" element={<ChartOfAccounts />} />
         <Route path="/system" element={<SystemStatus />} />
         <Route path="/vouchers" element={<Vouchers />} />
+        <Route path="/budget" element={<Budget />} />
         <Route path="/obligations" element={<Obligations />} />
         <Route path="/books" element={<Books />} />
         <Route path="/books/new" element={<NewJournalEntry />} />

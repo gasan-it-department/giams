@@ -40,6 +40,27 @@ pub fn verify_password(plain: &str, stored: &str) -> bool {
     argon2().verify_password(plain.as_bytes(), &parsed).is_ok()
 }
 
+/// A readable one-time password: four groups of five, e.g. `k4mzp-7rhxq-...`.
+///
+/// No vowels that spell words, and no `0/o`, `1/l` — it is read aloud over the
+/// phone or copied from a slip of paper, and the account forces a change at
+/// the first sign-in anyway. Used by the admin console and the server console
+/// alike, so there is one definition of what a handed-out password looks like.
+pub fn generate_one_time_password() -> String {
+    use rand::Rng;
+    const ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyz23456789";
+    let mut rng = rand::thread_rng();
+
+    (0..4)
+        .map(|_| {
+            (0..5)
+                .map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char)
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
 /// Runs a hash computation and discards it.
 ///
 /// Called when a sign-in names a user that does not exist. Without it, a

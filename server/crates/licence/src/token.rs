@@ -31,6 +31,10 @@ use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Re-exported so a holder of the authority key does not need its own
+/// dependency on the signature crate to name the type.
+pub use ed25519_dalek::SigningKey as AuthorityKey;
+
 const PREFIX: &str = "GIAMS1";
 
 fn b64() -> base64::engine::general_purpose::GeneralPurpose {
@@ -58,6 +62,50 @@ pub struct Claims {
     pub fingerprint: Option<String>,
     #[serde(default)]
     pub features: Vec<String>,
+    /// The people the municipality starts with. Created as accounts on the
+    /// municipality's own server when the key is installed there, because the
+    /// key is the only thing that travels from the authority to the office.
+    ///
+    /// Names and roles only — never a password. Absent on keys issued before
+    /// profiles existed, which still read exactly as they did.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub people: Vec<LicensedPerson>,
+}
+
+/// Someone a licence provisions an account for.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LicensedPerson {
+    pub username: String,
+    pub full_name: String,
+    /// A role code on the receiving server: `ACCOUNTANT` or `STAFF`.
+    pub role: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position_title: Option<String>,
+}
+
+/// Reads the authority's private key from a file of 32 raw bytes.
+///
+/// A path rather than the key itself, so it never appears in a shell history,
+/// an environment dump, or a process list.
+pub fn signing_key_from_file(path: &std::path::Path) -> anyhow::Result<SigningKey> {
+    let seed = std::fs::read(path)
+        .with_context(|| format!("could not read the licensing key at {}", path.display()))?;
+
+    let seed: [u8; 32] = seed
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("the licensing key at {} is not 32 bytes", path.display()))?;
+
+    Ok(SigningKey::from_bytes(&seed))
+}
+
+/// Whether a signing key is the one this build trusts.
+///
+/// A key that does not match would issue licences no installation of this
+/// build can verify — worse than useless, because each one looks valid until
+/// the office tries to install it.
+pub fn is_authority(signing: &SigningKey) -> bool {
+    authority_public_key().is_ok_and(|public| public == signing.verifying_key())
 }
 
 /// Signs a set of claims. Held by the licensing authority alone.
@@ -144,6 +192,7 @@ mod tests {
             grace_days: 14,
             fingerprint: None,
             features: vec![],
+            people: vec![],
         }
     }
 
@@ -181,6 +230,63 @@ mod tests {
             verify(&forged_token, &signing.verifying_key()).is_err(),
             "an edited licence was accepted"
         );
+    }
+
+    #[test]
+    fn the_people_on_a_licence_survive_signing_and_are_covered_by_it() {
+        let signing = key();
+        let mut with_people = claims();
+        with_people.people = vec![
+            LicensedPerson {
+                username: "m.santos".into(),
+                full_name: "Maria Santos".into(),
+                role: "ACCOUNTANT".into(),
+                position_title: Some("Municipal Accountant".into()),
+            },
+            LicensedPerson {
+                username: "j.reyes".into(),
+                full_name: "Juan Reyes".into(),
+                role: "STAFF".into(),
+                position_title: None,
+            },
+        ];
+
+        let token = issue(&with_people, &signing).unwrap();
+        let read = verify(&token, &signing.verifying_key()).unwrap();
+        assert_eq!(read.people, with_people.people);
+
+        // Promoting a staff member on someone else's key must break it like any
+        // other edit.
+        let mut parts: Vec<&str> = token.split('.').collect();
+        let mut edited: Claims = serde_json::from_slice(&b64().decode(parts[1]).unwrap()).unwrap();
+        edited.people[1].role = "ACCOUNTANT".into();
+        let forged = b64().encode(serde_json::to_vec(&edited).unwrap());
+        parts[1] = &forged;
+        assert!(verify(&parts.join("."), &signing.verifying_key()).is_err());
+    }
+
+    #[test]
+    fn a_key_issued_before_profiles_existed_still_reads() {
+        // The exact payload shape of a key from before `people` was added.
+        let signing = key();
+        let old = serde_json::json!({
+            "tenant_id": Uuid::nil(),
+            "municipality": "Municipality of Gasan",
+            "plan": "standard",
+            "seats": 25,
+            "issued_at": Utc::now(),
+            "not_before": Utc::now(),
+            "expires_at": Utc::now() + chrono::Duration::days(30),
+            "grace_days": 14,
+            "features": [],
+        });
+        let encoded = b64().encode(serde_json::to_vec(&old).unwrap());
+        let signature = signing.sign(encoded.as_bytes());
+        let token = format!("{PREFIX}.{encoded}.{}", b64().encode(signature.to_bytes()));
+
+        let read = verify(&token, &signing.verifying_key()).unwrap();
+        assert!(read.people.is_empty());
+        assert_eq!(read.seats, 25);
     }
 
     #[test]

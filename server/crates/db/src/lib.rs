@@ -10,7 +10,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod accounts;
 pub mod books;
+pub mod licensees;
 pub mod dashboard;
 pub mod budget;
 pub mod disbursement;

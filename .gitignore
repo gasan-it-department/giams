@@ -31,7 +31,7 @@ ops/certs/*
 # records request paths and usernames. None of these belong in a repository.
 CREDENTIALS.txt
 jev.txt
-server.log
+*.log
 /backups/
 /tls/
 

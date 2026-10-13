@@ -32,6 +32,15 @@ pub struct AppState {
     pub licence: licensing::SharedLicence,
     /// Counts failed sign-ins per source address.
     pub login_limiter: Arc<hardening::LoginLimiter>,
+    /// The licensing authority's private key, when this server holds it.
+    ///
+    /// Only the authority's own server has one. A municipality's server runs
+    /// with `None`, and its admin console can manage accounts but cannot
+    /// issue a key.
+    pub issuer: Option<Arc<giams_licence::token::AuthorityKey>>,
+    /// Where this server collects renewals from — the licensing server's
+    /// address. `None` and renewals can only arrive as a pasted key.
+    pub licence_server: Option<String>,
 }
 
 /// Who this server is. Established at startup from configuration and the
@@ -58,6 +67,7 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::vouchers::router())
         .merge(routes::reconciliation::router())
         .merge(routes::licence::router())
+        .merge(routes::admin::router())
         // Applied last so it wraps every route above it. Enforcement is a
         // layer rather than a per-route check: the route somebody forgets to
         // guard is always the one that matters.

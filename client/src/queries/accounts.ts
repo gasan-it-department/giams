@@ -3,7 +3,7 @@ import {
   type UseMutationResult, type UseQueryResult,
 } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { Account, AccountFilter, NewAccount } from '@/schemas/accounts'
+import type { Account, AccountFilter, AccountType, NewAccount } from '@/schemas/accounts'
 
 // ── Query keys ────────────────────────────────────────────────────────────
 // The filter is part of the key, so changing a search term is a separate
@@ -47,6 +47,35 @@ export function useAccounts(filter: AccountFilter = {}): UseQueryResult<Page<Acc
   })
 }
 
+/** An account as the pickers show it. */
+export interface AccountOption {
+  id:            string
+  code:          string
+  name:          string
+  account_type:  AccountType
+  expense_class: string | null
+  /** The summary account above it, e.g. "Cash" over "Cash - Local Treasury". */
+  parent_name:   string | null
+}
+
+/**
+ * Every account an entry can be posted to, unpaged.
+ *
+ * Loaded once and filtered where it is shown, so the picker lists the whole
+ * chart the moment it opens and narrows as the clerk types, with no request
+ * per keystroke. Also the only safe source for looking a code up by id: a
+ * lookup against one page of the paged list silently misses the rest.
+ */
+export function useAccountOptions(accountType?: AccountType): UseQueryResult<AccountOption[], Error> {
+  return useQuery({
+    queryKey:  [...accountKeys.all, 'options', accountType ?? 'all'],
+    queryFn:   () => api.get<AccountOption[]>(
+      `/api/accounts/options${accountType ? `?account_type=${accountType}` : ''}`,
+    ),
+    staleTime: 5 * 60_000,
+  })
+}
+
 export interface Fund {
   id: string
   code: string
@@ -61,6 +90,20 @@ export function useFunds(): UseQueryResult<Fund[], Error> {
   return useQuery({
     queryKey:  accountKeys.funds(),
     queryFn:   () => api.get<Fund[]>('/api/funds'),
+    staleTime: 5 * 60_000,
+  })
+}
+
+export interface Office {
+  id: string
+  code: string
+  name: string
+}
+
+export function useOffices(): UseQueryResult<Office[], Error> {
+  return useQuery({
+    queryKey:  ['offices'],
+    queryFn:   () => api.get<Office[]>('/api/offices'),
     staleTime: 5 * 60_000,
   })
 }

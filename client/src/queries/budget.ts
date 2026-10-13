@@ -46,6 +46,46 @@ export interface ObligationFilter {
   search?:      string
 }
 
+/** A budget line. Amounts are strings; the server computes the balances. */
+export interface Appropriation {
+  id:                 string
+  fund_id:            string
+  fund_name:          string
+  fiscal_year:        number
+  ordinance_no:       string
+  ordinance_date:     string
+  appropriation_type: string
+  office_id:          string
+  office_name:        string
+  account_id:         string
+  account_code:       string
+  account_name:       string
+  expense_class:      string
+  amount:             Amount
+  released_amount:    Amount
+  unreleased_amount:  Amount
+  particulars:        string | null
+}
+
+export interface NewAppropriation {
+  fund_id:            string
+  fiscal_year:        number
+  ordinance_no:       string
+  ordinance_date:     string
+  appropriation_type: string
+  office_id:          string
+  account_id:         string
+  expense_class:      string
+  amount:             Amount
+  particulars?:       string
+}
+
+export interface NewAllotment {
+  appropriation_id: string
+  release_date:     string
+  amount:           Amount
+}
+
 export interface RaodEntry {
   allotment_id:        string
   allotment_no:        string
@@ -81,6 +121,48 @@ export function useObligations(filter: ObligationFilter = {}): UseQueryResult<Ob
   return useQuery({
     queryKey: budgetKeys.obligations(filter),
     queryFn:  () => api.get<Obligation[]>(`/api/obligations${query(filter)}`),
+  })
+}
+
+export function useAppropriations(fiscalYear: number): UseQueryResult<Appropriation[], Error> {
+  return useQuery({
+    queryKey: budgetKeys.appropriations(fiscalYear),
+    queryFn:  () => api.get<Appropriation[]>(`/api/appropriations${query({ fiscal_year: fiscalYear })}`),
+  })
+}
+
+/**
+ * Records an appropriation.
+ *
+ * Invalidates the whole budget branch: a new appropriation changes what can be
+ * released, which the allotment form and the registries read.
+ */
+export function useCreateAppropriation(): UseMutationResult<Appropriation, Error, NewAppropriation> {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input) => api.post<Appropriation>('/api/appropriations', input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: budgetKeys.all })
+    },
+  })
+}
+
+/**
+ * Releases an allotment against an appropriation.
+ *
+ * Returns the appropriation it drew on, with its released and unreleased
+ * amounts moved. Invalidates the budget branch so the RAOD registry and the
+ * obligation form's list of available allotments both refresh.
+ */
+export function useCreateAllotment(): UseMutationResult<Appropriation, Error, NewAllotment> {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input) => api.post<Appropriation>('/api/allotments', input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: budgetKeys.all })
+    },
   })
 }
 

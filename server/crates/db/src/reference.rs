@@ -44,6 +44,37 @@ pub async fn list_funds(pool: &PgPool, scope: Scope) -> anyhow::Result<Vec<Fund>
     Ok(funds)
 }
 
+// ── Offices ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct Office {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+}
+
+/// The offices an appropriation can be made to and an obligation charged
+/// against. Only the active ones: an office closed or merged by ordinance
+/// should not appear on a form for a new budget line.
+pub async fn list_offices(pool: &PgPool, scope: Scope) -> anyhow::Result<Vec<Office>> {
+    let mut tx = scoped(pool, scope).await?;
+
+    let offices = sqlx::query_as::<_, Office>(
+        r#"
+        SELECT id, code, name
+          FROM office
+         WHERE is_active
+         ORDER BY code
+        "#,
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .context("could not read the list of offices")?;
+
+    tx.commit().await?;
+    Ok(offices)
+}
+
 // ── Chart of accounts ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -52,7 +83,8 @@ pub struct Account {
     pub code: String,
     pub name: String,
     pub account_type: String,
-    /// Derived in the database from the account type, never hand-entered.
+    /// Derived in the database from the account type and the contra flag,
+    /// never hand-entered.
     pub normal_balance: String,
     pub parent_id: Option<Uuid>,
     pub is_postable: bool,
@@ -61,6 +93,8 @@ pub struct Account {
     pub expense_class: Option<String>,
     pub is_cash: bool,
     pub is_active: bool,
+    /// What the account is for, from Annex B of the GAM.
+    pub description: Option<String>,
 }
 
 /// A page of results, with the total behind it.
@@ -134,7 +168,7 @@ pub async fn list_accounts(
                normal_balance,
                parent_id, is_postable, is_contra, requires_subsidiary,
                expense_class::text AS expense_class,
-               is_cash, is_active
+               is_cash, is_active, description
           FROM account
          WHERE ($1::text IS NULL OR code ILIKE '%' || $1 || '%' OR name ILIKE '%' || $1 || '%')
            AND ($2::text IS NULL OR account_type::text = $2)
@@ -158,6 +192,55 @@ pub async fn list_accounts(
     Ok(Page { items, total })
 }
 
+/// An account as a picker shows it.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AccountOption {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub account_type: String,
+    pub expense_class: Option<String>,
+    /// The summary account it sits under, e.g. "Cash" over "Cash - Local
+    /// Treasury". Lets a picker show where an account belongs.
+    pub parent_name: Option<String>,
+}
+
+/// Every account an entry can be posted to, for pickers.
+///
+/// Not paged, unlike [`list_accounts`]. A picker that shows the first twenty
+/// and hides the rest is the confusing kind, and a lookup built on one page
+/// silently misses everything after it. The postable chart is a few hundred
+/// rows, small enough to send once and filter where it is shown.
+pub async fn list_account_options(
+    pool: &PgPool,
+    scope: Scope,
+    account_type: Option<&str>,
+) -> anyhow::Result<Vec<AccountOption>> {
+    let mut tx = scoped(pool, scope).await?;
+
+    let rows = sqlx::query_as::<_, AccountOption>(
+        r#"
+        SELECT a.id, a.code, a.name,
+               a.account_type::text  AS account_type,
+               a.expense_class::text AS expense_class,
+               p.name                AS parent_name
+          FROM account a
+          LEFT JOIN account p ON p.id = a.parent_id
+         WHERE a.is_postable
+           AND a.is_active
+           AND ($1::text IS NULL OR a.account_type::text = $1)
+         ORDER BY a.code
+        "#,
+    )
+    .bind(account_type)
+    .fetch_all(&mut *tx)
+    .await
+    .context("could not read the chart of accounts")?;
+
+    tx.commit().await?;
+    Ok(rows)
+}
+
 #[derive(Debug, Deserialize)]
 pub struct NewAccount {
     pub code: String,
@@ -169,6 +252,8 @@ pub struct NewAccount {
     pub requires_subsidiary: bool,
     pub expense_class: Option<String>,
     pub is_cash: bool,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 pub async fn create_account(
@@ -183,15 +268,15 @@ pub async fn create_account(
         r#"
         INSERT INTO account (tenant_id, code, name, account_type, parent_id,
                              is_postable, is_contra, requires_subsidiary,
-                             expense_class, is_cash)
+                             expense_class, is_cash, description)
              VALUES ($1, $2, $3, $4::account_type, $5, $6, $7, $8,
-                     $9::expense_class, $10)
+                     $9::expense_class, $10, $11)
           RETURNING id, code, name,
                     account_type::text  AS account_type,
                     normal_balance,
                     parent_id, is_postable, is_contra, requires_subsidiary,
                     expense_class::text AS expense_class,
-                    is_cash, is_active
+                    is_cash, is_active, description
         "#,
     )
     .bind(scope.tenant_id)
@@ -204,6 +289,7 @@ pub async fn create_account(
     .bind(input.requires_subsidiary)
     .bind(input.expense_class.as_deref())
     .bind(input.is_cash)
+    .bind(input.description.as_deref().map(str::trim).filter(|s| !s.is_empty()))
     .fetch_one(&mut *tx)
     .await?;
 

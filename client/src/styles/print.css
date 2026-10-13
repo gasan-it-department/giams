@@ -48,6 +48,24 @@
     overflow: visible !important;
   }
 
+  /* Flatten the working shell so a print-only form fills the sheet.
+
+     The app lays the working area out with flex, and the content column
+     (`main`) is `display: flex; flex-direction: column`. A print form centred
+     in it with `margin: auto` then shrink-wraps to its own content width and
+     collapses into a corner instead of filling the page. Turning the shell
+     back into plain blocks lets the form take the full width the paper offers. */
+  main {
+    display: block !important;
+    padding: 0 !important;
+  }
+
+  .jev-print {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+
   /* ── Remove what is not part of the form ───────────────────────────────── */
   .no-print {
     display: none !important;

@@ -1,7 +1,9 @@
-import { CheckCircle2, CloudOff, CloudUpload, KeyRound, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, CloudOff, CloudUpload, KeyRound, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { ErrorNotice } from '@/components/ErrorNotice'
+import { OneTimePasswords } from '@/components/OneTimePasswords'
 import { useAuditIntegrity, useNodeHealth } from '@/queries/health'
-import { useInstallLicence, useLicence } from '@/queries/licence'
+import { useCheckRenewal, useInstallLicence, useLicence, type ProvisionedAccount } from '@/queries/licence'
+import { accessLabel, isLifetime } from '@/schemas/admin'
 import { useSetAutomatic, useSyncStatus, useUploadNow } from '@/queries/sync'
 import { useState } from 'react'
 
@@ -236,6 +238,63 @@ function when(value: string | null): string {
   return new Date(value).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+/** Collects a renewal from the licensing server now, and says what it found. */
+function CheckForRenewal() {
+  const check = useCheckRenewal()
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => check.mutate()}
+        disabled={check.isPending}
+        className="flex items-center gap-2 rounded-pill bg-surface px-4 py-2 text-sm font-medium hover:bg-hover disabled:opacity-60"
+      >
+        <RefreshCw className={`size-4 ${check.isPending ? 'animate-spin' : ''}`} aria-hidden />
+        {check.isPending ? 'Checking…' : 'Check for renewal'}
+      </button>
+      {check.data && (
+        <p
+          className={`mt-2 rounded-md px-3 py-2 text-sm ${
+            check.data.outcome === 'renewed' ? 'bg-ok-fill text-ok-ink' : 'bg-surface text-ink-secondary'
+          }`}
+        >
+          {check.data.message}
+        </p>
+      )}
+      {check.error && <div className="mt-2"><ErrorNotice error={check.error} /></div>}
+    </div>
+  )
+}
+
+/**
+ * The accounts a licence key brought with it: the Municipal Accountant and
+ * Accounting Staff named when the key was issued. New ones come with a
+ * one-time password; anyone already here is left exactly as they were.
+ */
+function ProvisionedFromKey({ accounts }: { accounts: ProvisionedAccount[] }) {
+  const created = accounts.filter((a) => a.status === 'created' && a.password)
+  const existing = accounts.filter((a) => a.status === 'existing')
+
+  if (accounts.length === 0) return null
+
+  return (
+    <div className="mt-3">
+      {created.length > 0 && (
+        <OneTimePasswords
+          title="Accounts created from this key"
+          people={created.map((a) => ({ full_name: a.full_name, username: a.username, password: a.password ?? '' }))}
+        />
+      )}
+      {existing.length > 0 && (
+        <p className="text-sm text-ink-secondary">
+          Already had an account, left unchanged: {existing.map((a) => a.full_name).join(', ')}.
+        </p>
+      )}
+    </div>
+  )
+}
+
 /**
  * The subscription, and where a renewal key is entered.
  *
@@ -259,13 +318,15 @@ function LicenceCard() {
       {data && (
         <>
           <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
-            <Row label="Plan" value={data.plan === 'on-premise' ? 'Local installation' : data.plan} />
+            <Row label="Plan" value={data.plan === 'on-premise' ? 'Local installation' : accessLabel(data.plan)} />
             <Row label="Workstations" value={data.seats > 1000 ? 'No limit' : String(data.seats)} />
             <Row
               label="Runs until"
-              value={data.expires_at
-                ? new Date(data.expires_at).toLocaleDateString('en-PH', { dateStyle: 'long' })
-                : 'No expiry'}
+              value={isLifetime(data.expires_at)
+                ? 'Lifetime — never expires'
+                : data.expires_at
+                  ? new Date(data.expires_at).toLocaleDateString('en-PH', { dateStyle: 'long' })
+                  : 'No expiry'}
             />
             <Row
               label="Recording"
@@ -275,7 +336,7 @@ function LicenceCard() {
 
           {data.notice && (
             <p className={`mt-3 flex items-start gap-2 rounded-md px-3 py-2 ${
-              data.can_record ? 'bg-warn-fill text-warn-ink' : 'bg-danger-fill text-danger-ink'
+              data.state === 'expiring' ? 'bg-warn-fill text-warn-ink' : 'bg-danger-fill text-danger-ink'
             }`}>
               <ShieldAlert className="mt-0.5 size-[18px] shrink-0" aria-hidden />
               {data.notice}
@@ -283,10 +344,14 @@ function LicenceCard() {
           )}
 
           <p className="mt-3 text-sm text-ink-secondary">
-            If a subscription ends, this system becomes view-only. Every record,
-            report, and financial statement stays available and printable — nothing
-            is ever locked away.
+            Everyone is warned seven days before the subscription ends. After it ends the
+            system keeps working for five more days, then locks until it is renewed.
+            Nothing is ever deleted. Renewals reach this server by themselves — no new
+            key is needed — and <span className="font-medium text-ink">Check for renewal</span> collects
+            one straight away.
           </p>
+
+          <CheckForRenewal />
 
           <form
             className="mt-3 flex items-start gap-2"
@@ -319,10 +384,13 @@ function LicenceCard() {
 
           {install.error && <div className="mt-3"><ErrorNotice error={install.error} /></div>}
           {install.isSuccess && !install.error && (
-            <p className="mt-3 flex items-center gap-2 rounded-md bg-ok-fill px-3 py-2 text-ok-ink">
-              <ShieldCheck className="size-[18px] shrink-0" aria-hidden />
-              The licence key has been installed.
-            </p>
+            <>
+              <p className="mt-3 flex items-center gap-2 rounded-md bg-ok-fill px-3 py-2 text-ok-ink">
+                <ShieldCheck className="size-[18px] shrink-0" aria-hidden />
+                The licence key has been installed.
+              </p>
+              <ProvisionedFromKey accounts={install.data.provisioned} />
+            </>
           )}
         </>
       )}

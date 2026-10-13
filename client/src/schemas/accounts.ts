@@ -36,6 +36,7 @@ export const accountSchema = z.object({
   expense_class:       z.enum(EXPENSE_CLASSES).nullable(),
   is_cash:             z.boolean(),
   is_active:           z.boolean(),
+  description:         z.string().nullable(),
 })
 
 export type Account = z.infer<typeof accountSchema>
@@ -65,6 +66,7 @@ export const newAccountSchema = z.object({
   requires_subsidiary: z.boolean().default(false),
   expense_class:       z.enum(EXPENSE_CLASSES).nullable().default(null),
   is_cash:             z.boolean().default(false),
+  description:         z.string().trim().nullable().default(null),
 })
 .refine((v) => v.expense_class === null || v.account_type === 'expense', {
   path: ['expense_class'],

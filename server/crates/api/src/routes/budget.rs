@@ -14,11 +14,74 @@ use crate::extract::Json as JsonBody;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/api/appropriations", get(list_appropriations))
+        .route("/api/appropriations", get(list_appropriations).post(create_appropriation))
+        .route("/api/allotments", post(create_allotment))
         .route("/api/allotments/available", get(list_allotment_options))
         .route("/api/obligations", get(list_obligations).post(create_obligation))
         .route("/api/obligations/{id}/certify", post(certify))
         .route("/api/registries/raod", get(raod))
+}
+
+/// The expense classes an appropriation may carry, matching the database enum.
+const EXPENSE_CLASSES: [&str; 4] = ["PS", "MOOE", "FE", "CO"];
+
+/// The kinds of appropriating instrument the database accepts.
+const APPROPRIATION_TYPES: [&str; 3] = ["annual", "supplemental", "continuing"];
+
+async fn create_appropriation(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    JsonBody(input): JsonBody<budget::NewAppropriation>,
+) -> ApiResult<Json<Appropriation>> {
+    user.require("budget.manage")?;
+
+    if input.ordinance_no.trim().is_empty() {
+        return Err(AppError::validation(
+            "ordinance_no",
+            "Enter the number of the ordinance that authorises this appropriation.",
+        ));
+    }
+    if !APPROPRIATION_TYPES.contains(&input.appropriation_type.as_str()) {
+        return Err(AppError::validation(
+            "appropriation_type",
+            "Choose whether this is an annual, supplemental, or continuing appropriation.",
+        ));
+    }
+    if !EXPENSE_CLASSES.contains(&input.expense_class.as_str()) {
+        return Err(AppError::validation(
+            "expense_class",
+            "Choose the expense class: Personal Services, MOOE, Financial Expenses, or Capital Outlay.",
+        ));
+    }
+    if input.amount.is_zero() || input.amount.is_negative() {
+        return Err(AppError::validation("amount", "Enter an amount greater than zero."));
+    }
+
+    let appropriation =
+        budget::create_appropriation(&state.pool, user.scope(), &user.username, input)
+            .await
+            .map_err(unwrap_database_error)?;
+
+    Ok(Json(appropriation))
+}
+
+async fn create_allotment(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    JsonBody(input): JsonBody<budget::NewAllotment>,
+) -> ApiResult<Json<Appropriation>> {
+    user.require("budget.manage")?;
+
+    if input.amount.is_zero() || input.amount.is_negative() {
+        return Err(AppError::validation("amount", "Enter an amount greater than zero."));
+    }
+
+    let appropriation =
+        budget::create_allotment(&state.pool, user.scope(), &user.username, input)
+            .await
+            .map_err(unwrap_database_error)?;
+
+    Ok(Json(appropriation))
 }
 
 /// Defaults to the current year so every screen does not have to ask.

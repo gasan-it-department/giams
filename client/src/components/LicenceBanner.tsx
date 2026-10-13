@@ -7,6 +7,9 @@ import { useLicence } from '@/queries/licence'
  *
  * Shown only when there is something to say. A banner that is always there is
  * a banner nobody reads, and this one has to be read on the day it matters.
+ * It appears seven days before the subscription ends, turns red once it has
+ * ended and the grace days are counting down, and is replaced by the lock
+ * screen after that.
  *
  * The wording comes from the server, which phrases it once for the whole
  * system. Two copies of a message like this drift, and the day they differ is
@@ -15,9 +18,9 @@ import { useLicence } from '@/queries/licence'
 export function LicenceBanner() {
   const { data } = useLicence()
 
-  if (!data?.notice) return null
+  if (!data?.notice || data.state === 'locked') return null
 
-  const serious = data.state === 'read_only' || data.clock_problem
+  const serious = data.state === 'grace' || data.state === 'read_only' || data.clock_problem
   const Icon = data.clock_problem ? Clock : AlertTriangle
 
   return (

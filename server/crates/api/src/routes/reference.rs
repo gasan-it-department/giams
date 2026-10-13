@@ -3,7 +3,10 @@
 use axum::extract::{Path, Query, State};
 use axum::routing::{delete, get};
 use axum::{Json, Router};
-use giams_db::reference::{self, Account, AccountFilter, Fund, NewAccount, Page};
+use giams_db::reference::{
+    self, Account, AccountFilter, AccountOption, Fund, NewAccount, Office, Page,
+};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{ApiResult, AppError, AppState, CurrentUser};
@@ -11,8 +14,23 @@ use crate::{ApiResult, AppError, AppState, CurrentUser};
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/funds", get(list_funds))
+        .route("/api/offices", get(list_offices))
         .route("/api/accounts", get(list_accounts).post(create_account))
+        .route("/api/accounts/options", get(list_account_options))
         .route("/api/accounts/{id}", delete(deactivate_account))
+}
+
+async fn list_offices(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> ApiResult<Json<Vec<Office>>> {
+    user.require("budget.view")?;
+
+    let offices = reference::list_offices(&state.pool, user.scope())
+        .await
+        .map_err(AppError::Unexpected)?;
+
+    Ok(Json(offices))
 }
 
 async fn list_funds(
@@ -40,6 +58,26 @@ async fn list_accounts(
         .map_err(AppError::Unexpected)?;
 
     Ok(Json(accounts))
+}
+
+#[derive(Debug, Deserialize)]
+struct OptionsQuery {
+    account_type: Option<String>,
+}
+
+/// Every postable account, unpaged, for the account pickers.
+async fn list_account_options(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Query(q): Query<OptionsQuery>,
+) -> ApiResult<Json<Vec<AccountOption>>> {
+    user.require("account.view")?;
+
+    let options = reference::list_account_options(&state.pool, user.scope(), q.account_type.as_deref())
+        .await
+        .map_err(AppError::Unexpected)?;
+
+    Ok(Json(options))
 }
 
 async fn create_account(

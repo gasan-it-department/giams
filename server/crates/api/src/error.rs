@@ -498,6 +498,33 @@ fn translate_constraint(
             "That account number is already recorded for this bank.",
             None,
         ),
+
+        // ── Licence profiles (migration 0033) ────────────────────────────────
+        "licensee_one_per_tenant" => (
+            "LICENCE_PROFILE_EXISTS",
+            "This municipality already has a licence profile.",
+            Some("Open its profile and issue a new key from there instead."),
+        ),
+        "licensee_one_per_code" => (
+            "LICENCE_PROFILE_EXISTS",
+            "A licence profile already exists for a municipality by that name.",
+            Some("Open its profile and issue a new key from there instead."),
+        ),
+        "licensee_person_username_once" => (
+            "DUPLICATE_USERNAME_ON_PROFILE",
+            "The same username appears twice on this profile.",
+            Some("Give each person their own username."),
+        ),
+        "licence_issue_runs_forward" => (
+            "LICENCE_DATES_IMPOSSIBLE",
+            "A licence key cannot end before it begins.",
+            None,
+        ),
+        "licence_renewal_runs_forward" => (
+            "RENEWAL_DATES_IMPOSSIBLE",
+            "A renewal cannot end before it begins.",
+            None,
+        ),
         _ => return None,
     })
 }
@@ -540,9 +567,31 @@ pub(crate) const ALL_TRANSLATED_CONSTRAINTS: &[&str] = &[
     "disbursement_check_needs_bank",
     "dv_deduction_dv_id_deduction_type_id_key",
     "bank_account_tenant_id_bank_name_account_no_key",
+    "licensee_one_per_tenant",
+    "licensee_one_per_code",
+    "licensee_person_username_once",
+    "licence_issue_runs_forward",
+    "licence_renewal_runs_forward",
 ];
 
 pub type ApiResult<T> = Result<T, AppError>;
+
+/// Turns a clause into a sentence: a capital first, a full stop last.
+///
+/// Some messages are written as fragments so they can be embedded in longer
+/// text — the licence checks are — and shown on their own they look unfinished.
+pub fn as_sentence(text: &str) -> String {
+    let text = text.trim();
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    let mut out: String = first.to_uppercase().chain(chars).collect();
+    if !out.ends_with(['.', '!', '?']) {
+        out.push('.');
+    }
+    out
+}
 
 /// Turns an error from the repository layer into one the office can read.
 ///
@@ -616,6 +665,16 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_fragment_is_shown_as_a_sentence() {
+        assert_eq!(
+            as_sentence("that licence key is not genuine"),
+            "That licence key is not genuine."
+        );
+        assert_eq!(as_sentence("Already a sentence."), "Already a sentence.");
+        assert_eq!(as_sentence("  "), "");
     }
 
     #[test]
