@@ -1,4 +1,5 @@
 import type ExcelJS from 'exceljs'
+import { saveFile, XLSX_TYPE } from '@/lib/saveFile'
 import type { Amount } from '@/lib/money'
 
 /**
@@ -116,18 +117,7 @@ async function loadTemplate(): Promise<ExcelJS.Workbook> {
 
 async function save(workbook: ExcelJS.Workbook, filename: string): Promise<void> {
   const buffer = await workbook.xlsx.writeBuffer()
-  const blob = new Blob([buffer], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.append(anchor)
-  anchor.click()
-  anchor.remove()
-  // Revoked on the next tick so the click has taken the download.
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  saveFile(new Blob([buffer], { type: XLSX_TYPE }), filename)
 }
 
 /**

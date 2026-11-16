@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
@@ -18,6 +18,9 @@ import { Statements } from '@/pages/Statements'
 import { SystemStatus } from '@/pages/SystemStatus'
 import { Vouchers } from '@/pages/Vouchers'
 import { useAuthStore } from '@/stores/authStore'
+
+// the spreadsheet editor is most of a megabyte; only fetched when opened
+const Spreadsheets = lazy(() => import('@/pages/Spreadsheets').then((m) => ({ default: m.Spreadsheets })))
 
 /**
  * The authentication gate and top-level routes.
@@ -92,6 +95,14 @@ export default function App() {
         <Route path="/books/new" element={<NewJournalEntry />} />
         <Route path="/reconcile" element={<Reconcile />} />
         <Route path="/statements" element={<Statements />} />
+        <Route
+          path="/spreadsheets"
+          element={
+            <Suspense fallback={<p className="px-4 py-6 text-ink-muted">Loading the spreadsheet editor…</p>}>
+              <Spreadsheets />
+            </Suspense>
+          }
+        />
         <Route path="*" element={<Navigate to="/overview" replace />} />
       </Routes>
     </AppShell>
