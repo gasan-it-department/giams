@@ -11,6 +11,8 @@
 #![forbid(unsafe_code)]
 
 mod discovery;
+#[cfg(windows)]
+mod service;
 mod tls;
 
 use std::net::SocketAddr;
@@ -23,15 +25,37 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use uuid::Uuid;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
+    // started by the Windows service manager (ops/install-service.ps1)
+    #[cfg(windows)]
+    if std::env::args().nth(1).as_deref() == Some("service") {
+        return service::run();
+    }
+
+    init(None);
+    tokio::runtime::Runtime::new()
+        .context("could not start the server's runtime")?
+        .block_on(run())
+}
+
+/// Reads `.env` and starts logging: to the console, or to a file when there
+/// is no console (as a service).
+fn init(log_file: Option<std::fs::File>) {
     dotenvy::dotenv().ok();
 
-    tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "giams=debug,tower_http=info,sqlx=warn".into()))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "giams=debug,tower_http=info,sqlx=warn".into());
+    let registry = tracing_subscriber::registry().with(filter);
 
+    match log_file {
+        Some(file) => registry
+            .with(tracing_subscriber::fmt::layer().with_ansi(false).with_writer(std::sync::Mutex::new(file)))
+            .init(),
+        None => registry.with(tracing_subscriber::fmt::layer()).init(),
+    }
+}
+
+async fn run() -> anyhow::Result<()> {
     let config = Config::from_env()?;
 
     tracing::info!("starting giams-node {}", env!("CARGO_PKG_VERSION"));
@@ -43,9 +67,15 @@ async fn main() -> anyhow::Result<()> {
 
     let node = bootstrap_node(&pool, &config).await?;
 
+    // from here on every connection is in this municipality's scope, which is
+    // what lets the server run under a database account that doesn't bypass
+    // row level security (see ops/limited-db-roles.sql)
+    pool.close().await;
+    let pool = giams_db::connect_for_tenant(&config.database_url, node.tenant_id).await?;
+
     // Maintenance commands run against the same database and then stop, so
     // the IT office never needs a second tool installed on the server.
-    if let Some(command) = std::env::args().nth(1) {
+    if let Some(command) = std::env::args().nth(1).filter(|c| c != "service") {
         return run_command(&pool, node.tenant_id, &command, std::env::args().nth(2)).await;
     }
 
@@ -328,6 +358,8 @@ impl Config {
 /// pointed at the same database cannot claim to be primary — it is refused by
 /// the database rather than quietly becoming a second writer.
 async fn bootstrap_node(pool: &PgPool, config: &Config) -> anyhow::Result<NodeIdentity> {
+    let mut tx = pool.begin().await.context("could not start a transaction")?;
+
     let tenant_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO tenant (id, code, name)
@@ -339,9 +371,16 @@ async fn bootstrap_node(pool: &PgPool, config: &Config) -> anyhow::Result<NodeId
     .bind(&config.tenant_code)
     .bind(&config.municipality_name)
     .bind(config.tenant_id)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await
     .context("could not establish the municipality record")?;
+
+    // the node row is the municipality's own, so it's written in its scope
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .context("could not set the municipality scope")?;
 
     // An id only takes effect on a fresh installation. Said out loud when it
     // did not, because the symptom otherwise is a licence key refused as
@@ -368,9 +407,11 @@ async fn bootstrap_node(pool: &PgPool, config: &Config) -> anyhow::Result<NodeId
     .bind(tenant_id)
     .bind(&config.node_code)
     .bind(format!("{} accounting server", config.municipality_name))
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await
     .context("could not establish this server's identity")?;
+
+    tx.commit().await.context("could not save this server's identity")?;
 
     Ok(NodeIdentity {
         node_id,
@@ -829,7 +870,13 @@ mod import_tests {
 fn backup(folder: Option<&str>) -> anyhow::Result<()> {
     use anyhow::{bail, Context};
 
-    let database_url = std::env::var("DATABASE_URL").context("DATABASE_URL is not set")?;
+    // the server's own account can't see past row level security, and pg_dump
+    // refuses a table it would filter; the backup account reads everything
+    let database_url = std::env::var("GIAMS_BACKUP_DATABASE_URL")
+        .ok()
+        .filter(|u| !u.trim().is_empty())
+        .or_else(|| std::env::var("DATABASE_URL").ok())
+        .context("DATABASE_URL is not set")?;
 
     let folder = folder.unwrap_or("backups");
     std::fs::create_dir_all(folder)

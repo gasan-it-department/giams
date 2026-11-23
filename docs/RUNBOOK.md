@@ -64,7 +64,28 @@ chain. It exits non-zero and names the entries if anything has been altered.
 
 ## First installation
 
-Run once, from an Administrator PowerShell on the office server:
+Create the database and its two accounts first. `giams_app` is what the
+server signs in as: it owns the tables so it can apply its own migrations, but
+it is not a superuser and does not bypass row level security. `giams_backup`
+only reads, for backups.
+
+```bash
+createdb -U postgres giams
+```
+
+Start the server once with `DATABASE_URL` as `postgres`: the first migration
+installs PostgreSQL extensions, which only a superuser can do. Stop it, then:
+
+```bash
+psql -U postgres -d giams -v app_pw="'<long random>'" -v backup_pw="'<long random>'" -f ops/limited-db-roles.sql
+```
+
+Put both into `.env` (`DATABASE_URL` as `giams_app`, `GIAMS_BACKUP_DATABASE_URL`
+as `giams_backup`) and keep the `postgres` password off this machine's `.env`.
+Run the script again after restoring a backup, since a restore as `postgres`
+makes `postgres` the owner again.
+
+Then, from an Administrator PowerShell on the office server:
 
 ```bash
 .\ops\install-service.ps1 -InstallPath "C:\GIAMS"
@@ -72,10 +93,13 @@ Run once, from an Administrator PowerShell on the office server:
 
 It refuses to install if `giams-node.exe` or `.env` is missing, or if `.env`
 still contains `CHANGE-ME` — each of those otherwise produces a service that
-installs cleanly and then will not start, with the reason buried in the event
-log. It sets the service to restart itself after a crash.
+installs cleanly and then will not start. It sets the service to start after
+PostgreSQL at boot and to restart itself after a crash or a failed start.
+`-SourcePath D:\path\to\giams` copies the release build and its settings in
+first; run it again the same way to update an installed server.
 
-Then read the first-run administrator password out of the service log. It is
+The service logs to `logs\giams-node.log` in the install folder. Read the
+first-run administrator password there. It is
 printed **once** and is not recoverable; if it is lost, use `reset-password`.
 
 Set up the daily backup:

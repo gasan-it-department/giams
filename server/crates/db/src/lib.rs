@@ -43,6 +43,34 @@ pub async fn connect(database_url: &str) -> anyhow::Result<PgPool> {
         .context("could not connect to the accounting database")
 }
 
+/// A pool whose connections are scoped to one municipality by default.
+///
+/// A node serves exactly one municipality. Under a database account that does
+/// not bypass row level security, a query outside `scoped()` would otherwise
+/// see nothing at all; with this it sees its own municipality and still never
+/// another's. `scoped()` sets the tenant per transaction and wins over this.
+pub async fn connect_for_tenant(database_url: &str, tenant_id: Uuid) -> anyhow::Result<PgPool> {
+    let tenant = tenant_id.to_string();
+    PgPoolOptions::new()
+        .max_connections(16)
+        .min_connections(2)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .idle_timeout(std::time::Duration::from_secs(600))
+        .after_connect(move |conn, _meta| {
+            let tenant = tenant.clone();
+            Box::pin(async move {
+                sqlx::query("SELECT set_config('app.tenant_id', $1, false)")
+                    .bind(tenant)
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(database_url)
+        .await
+        .context("could not connect to the accounting database")
+}
+
 /// Who is acting, for row level security and for the audit trail.
 #[derive(Debug, Clone, Copy)]
 pub struct Scope {

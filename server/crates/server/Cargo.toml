@@ -35,3 +35,6 @@ rustls = { version = "0.23.43", default-features = false, features = ["ring", "s
 
 [dev-dependencies]
 rustls-pemfile = "2.2.0"
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8"
