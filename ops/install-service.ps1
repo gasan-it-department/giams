@@ -121,7 +121,8 @@ if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
 # `service` makes the program report to the service manager, work from its own
 # folder (where .env, the keys and tls\ are) and log to logs\giams-node.log.
 
-Write-Host "Installing $DisplayName…"
+# plain ASCII in anything printed: Windows PowerShell reads this file as ANSI
+Write-Host "Installing $DisplayName..."
 
 # start after PostgreSQL at boot, or the first attempt finds no database
 $postgres = Get-Service -Name 'postgresql*' -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -145,7 +146,19 @@ if ($LASTEXITCODE -ne 0) { throw "sc.exe create failed with exit code $LASTEXITC
 & sc.exe failureflag $ServiceName 1 | Out-Null
 
 # ── Start ───────────────────────────────────────────────────────────────────
-Write-Host 'Starting…'
+# a copy of the server started by hand holds the port and the service can't
+# listen; say so before starting rather than leave it to the log
+$bind = (Get-Content $envFile | Where-Object { $_ -match '^\s*GIAMS_BIND\s*=' } | Select-Object -First 1)
+$port = if ($bind -match ':(\d+)"?\s*$') { [int]$Matches[1] } else { 8787 }
+$holder = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($holder) {
+    $proc = Get-Process -Id $holder.OwningProcess -ErrorAction SilentlyContinue
+    Write-Host "Port $port is already in use by $($proc.Path) (process $($holder.OwningProcess))." -ForegroundColor Yellow
+    Write-Host 'Stop it, and the service starts by itself within two minutes:' -ForegroundColor Yellow
+    Write-Host "    Stop-Process -Id $($holder.OwningProcess)"
+}
+
+Write-Host 'Starting...'
 & sc.exe start $ServiceName | Out-Null
 Start-Sleep -Seconds 8
 
@@ -160,8 +173,10 @@ if ($service.Status -ne 'Running') {
     Write-Host 'The service did not start. Its log says why:' -ForegroundColor Red
     Write-Host "    Get-Content '$InstallPath\logs\giams-node.log' -Tail 30"
     Write-Host ''
-    Write-Host 'The usual causes are a wrong DATABASE_URL, PostgreSQL not running,'
-    Write-Host 'or a value with a space in it left unquoted in .env.'
+    Write-Host 'The usual causes are another copy of the server already using the port'
+    Write-Host '("Only one usage of each socket address" in the log), a wrong DATABASE_URL,'
+    Write-Host 'PostgreSQL not running, or a value with a space in it left unquoted in .env.'
+    Write-Host 'Once the cause is fixed the service restarts by itself within two minutes.'
     exit 1
 }
 
