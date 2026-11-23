@@ -14,6 +14,7 @@ mod discovery;
 #[cfg(windows)]
 mod service;
 mod tls;
+mod web;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -221,7 +222,20 @@ async fn run() -> anyhow::Result<()> {
 
     spawn_renewal_checks(state.clone());
 
-    let app = giams_api::router(state).layer(TraceLayer::new_for_http());
+    let app = giams_api::router(state);
+    // the screens, so a browser needs nothing installed; the security headers
+    // go on again so the pages carry them too
+    let app = match web::folder() {
+        Some(dir) => {
+            tracing::info!(folder = %dir.display(), "serving the screens to browsers");
+            web::serve(app, &dir).layer(axum::middleware::from_fn(giams_api::hardening::security_headers))
+        }
+        None => {
+            tracing::warn!("no built screens found (web\\ or client\\dist), so browsers get only the API; the desktop app is unaffected");
+            app
+        }
+    };
+    let app = app.layer(TraceLayer::new_for_http());
 
     let addr: SocketAddr = config.bind.parse().context("GIAMS_BIND is not a valid address")?;
     let listener = tokio::net::TcpListener::bind(addr)

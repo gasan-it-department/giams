@@ -77,6 +77,18 @@ if ($SourcePath) {
         if (Test-Path $from) { Copy-Item $from $InstallPath -Recurse -Force }
     }
 
+    # the screens browsers load (web\ beside the exe); replaced whole so files
+    # from an older build don't linger
+    $screens = @('client\dist', 'web') | ForEach-Object { Join-Path $SourcePath $_ } |
+        Where-Object { Test-Path (Join-Path $_ 'index.html') } | Select-Object -First 1
+    if ($screens) {
+        $web = Join-Path $InstallPath 'web'
+        if (Test-Path $web) { Remove-Item $web -Recurse -Force }
+        Copy-Item $screens $web -Recurse -Force
+    } else {
+        Write-Host 'No built screens found (client\dist): browsers will get only the API. Build them with: npm --prefix client run build' -ForegroundColor Yellow
+    }
+
     # the licensing key only goes where .env asks for it, at the same relative path
     $keyLine = Get-Content (Join-Path $SourcePath '.env') | Where-Object { $_ -match '^\s*GIAMS_LICENCE_AUTHORITY_KEY\s*=' }
     if ($keyLine) {

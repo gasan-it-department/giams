@@ -66,6 +66,7 @@ impl From<session::SignedIn> for SessionResponse {
 async fn login(
     State(state): State<AppState>,
     ConnectInfo(caller): ConnectInfo<SocketAddr>,
+    headers: axum::http::HeaderMap,
     JsonBody(body): JsonBody<LoginRequest>,
 ) -> ApiResult<Json<SessionResponse>> {
     if body.username.trim().is_empty() {
@@ -78,7 +79,7 @@ async fn login(
     // The account itself locks after repeated failures, but an attacker trying
     // one password against every username never trips that — each account sees
     // a single failure. Counting the source is the shape that attack has.
-    let address = caller.ip();
+    let address = crate::hardening::client_address(caller.ip(), &headers);
 
     if !state.login_limiter.permitted(address) {
         tracing::warn!(%address, "sign-in attempts from this address have been rate limited");

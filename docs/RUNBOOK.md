@@ -11,7 +11,9 @@ by someone who was not here when it was built.
 |---|---|---|
 | **PostgreSQL** | Holds the municipality's books. The one thing that must never be lost. | The office server |
 | **`giams-node.exe`** | The application. Serves the screens, applies its own database migrations, uploads to the cloud. | The office server, as a Windows Service |
-| **Workstation browsers** | The screens. Nothing is installed on them. | Any PC on the office LAN |
+| **Workstation browsers** | The screens, from `web\` beside the exe. Nothing is installed on them. | Any PC on the office LAN, or anywhere through the tunnel |
+| **GIAMS desktop app** | The same screens as an installed program; keeps people signed in between restarts. Optional. | Office PCs that want it |
+| **`cloudflared`** | Optional tunnel that puts the server on a public `https://` address without opening the router. | The office server |
 | **`giams-cloud.exe`** | Receives signed copies from municipalities. Optional. | Wherever the cloud service is hosted |
 
 The node is the **sole writer of ledger facts**. Workstations hold drafts;
@@ -187,6 +189,54 @@ trust step. Stated plainly so nobody assumes more of it than it gives.
 
 Keep `giams-server.key` off shared drives. Anyone holding it can impersonate
 this server to a workstation that trusts the certificate.
+
+---
+
+## Reaching it from a browser
+
+**On the office network.** Set `GIAMS_BIND="0.0.0.0:8787"`, turn on
+encryption (above), re-run the installer, and open `https://<server>:8787` in
+Chrome or Edge on any office PC. The installer copies the screens into
+`C:\GIAMS\web`; re-run it after every update so browsers get the new ones.
+
+**From the internet.** A Cloudflare Tunnel carries public traffic to the
+server over an outbound connection: no port is opened on the router, the
+books stay in the office, Cloudflare provides the certificate, and the office
+network keeps working when the internet is down. Leave `GIAMS_BIND` on
+`127.0.0.1` for this; `cloudflared` runs on the same machine.
+
+1. In `.env`: `GIAMS_PROXY_HEADER="cf-connecting-ip"`, then re-run the
+   installer. Without it every visitor looks like `127.0.0.1` to the sign-in
+   limiter, and one person's wrong passwords lock everybody out.
+2. On a Cloudflare account that holds the domain:
+
+   ```bash
+   cloudflared tunnel login
+   cloudflared tunnel create giams
+   cloudflared tunnel route dns giams giams.<your-domain>
+   ```
+
+3. Its `config.yml`:
+
+   ```yaml
+   tunnel: giams
+   credentials-file: C:\Users\<you>\.cloudflared\<tunnel id>.json
+   ingress:
+     - hostname: giams.<your-domain>
+       service: http://127.0.0.1:8787
+     - service: http_status:404
+   ```
+
+4. From an Administrator PowerShell, `cloudflared service install`, so the
+   tunnel starts with Windows like the server does.
+
+If this machine already runs a tunnel for something else, add the `giams.`
+hostname as another ingress rule above its catch-all instead of a second
+tunnel.
+
+Before it goes public: give every account a strong password, and put the
+admin console behind Cloudflare Access (or keep `/admin` off the public
+hostname with a rule) so licence keys can't be tried from the internet.
 
 ---
 

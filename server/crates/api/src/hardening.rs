@@ -181,7 +181,37 @@ pub fn caller_address(request: &Request) -> Option<IpAddr> {
     request
         .extensions()
         .get::<ConnectInfo<std::net::SocketAddr>>()
-        .map(|ConnectInfo(addr)| addr.ip())
+        .map(|ConnectInfo(addr)| client_address(addr.ip(), request.headers()))
+}
+
+/// The address to count a request against.
+///
+/// Normally the socket's. Behind a tunnel (`cloudflared` on this machine)
+/// every visitor arrives from 127.0.0.1, and one person's wrong passwords
+/// would lock everyone out; there the tunnel's header carries the visitor.
+/// Believed only when `GIAMS_PROXY_HEADER` names it AND the connection is
+/// from this machine, so nobody on the network can claim an address by
+/// typing the header.
+pub fn client_address(peer: IpAddr, headers: &axum::http::HeaderMap) -> IpAddr {
+    static HEADER: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    let header = HEADER.get_or_init(|| {
+        std::env::var("GIAMS_PROXY_HEADER")
+            .ok()
+            .map(|h| h.trim().to_ascii_lowercase())
+            .filter(|h| !h.is_empty())
+    });
+
+    if !peer.is_loopback() {
+        return peer;
+    }
+    header
+        .as_deref()
+        .and_then(|name| headers.get(name))
+        .and_then(|value| value.to_str().ok())
+        // x-forwarded-for style lists: the first is the visitor
+        .and_then(|value| value.split(',').next())
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(peer)
 }
 
 #[cfg(test)]
