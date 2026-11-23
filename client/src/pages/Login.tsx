@@ -1,7 +1,7 @@
 import { useState, type InputHTMLAttributes } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Building2, Loader2, ShieldCheck } from 'lucide-react'
+import { Building2, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
 import { ErrorNotice } from '@/components/ErrorNotice'
 import { ServerChooser } from '@/components/ServerChooser'
 import { ApiError } from '@/lib/api'
@@ -125,24 +125,41 @@ interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
  * announces the message, and the error is placed after the input so the
  * reading order matches the visual one.
  */
-function Field({ label, error, id, ...props }: FieldProps) {
+function Field({ label, error, id, type, ...props }: FieldProps) {
   const inputId = id ?? props.name ?? label.toLowerCase()
   const errorId = `${inputId}-error`
+  const isPassword = type === 'password'
+  const [shown, setShown] = useState(false)
 
   return (
     <div className="mt-4 first:mt-0">
       <label htmlFor={inputId} className="mb-1.5 block font-medium">
         {label}
       </label>
-      <input
-        id={inputId}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-        className={`w-full rounded-md bg-sunken px-3.5 py-2.5 text-ink placeholder:text-ink-muted ${
-          error ? 'ring-1 ring-danger-ink' : ''
-        }`}
-        {...props}
-      />
+      <div className="relative">
+        <input
+          id={inputId}
+          type={isPassword && shown ? 'text' : type}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          className={`w-full rounded-md bg-sunken px-3.5 py-2.5 text-ink placeholder:text-ink-muted ${
+            isPassword ? 'pr-11' : ''
+          } ${error ? 'ring-1 ring-danger-ink' : ''}`}
+          {...props}
+        />
+        {isPassword && (
+          <button
+            type="button"
+            onClick={() => setShown((s) => !s)}
+            aria-label={shown ? 'Hide password' : 'Show password'}
+            aria-pressed={shown}
+            title={shown ? 'Hide password' : 'Show password'}
+            className="absolute inset-y-0 right-1 my-auto flex size-9 items-center justify-center rounded-pill text-ink-secondary hover:bg-hover"
+          >
+            {shown ? <EyeOff className="size-[18px]" aria-hidden /> : <Eye className="size-[18px]" aria-hidden />}
+          </button>
+        )}
+      </div>
       {error && (
         <p id={errorId} className="mt-1.5 text-sm text-danger-ink">
           {error}
