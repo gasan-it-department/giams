@@ -4,6 +4,7 @@ import { Workbook, type WorkbookInstance } from '@fortune-sheet/react'
 import type { Sheet } from '@fortune-sheet/core'
 import { transformExcelToFortune, transformFortuneToExcel } from '@corbe30/fortune-excel'
 import '@fortune-sheet/react/dist/index.css'
+import '@/styles/spreadsheets.css'
 import { EditorBoundary } from '@/components/EditorBoundary'
 import { ErrorNotice } from '@/components/ErrorNotice'
 import { saveFile, XLSX_TYPE } from '@/lib/saveFile'
@@ -82,6 +83,24 @@ export function Spreadsheets() {
     }, 50)
     return () => { clearTimeout(timer); clearTimeout(settle) }
   }, [key])
+
+  // the editor's status bar prints "Sum: NaN" and the like when the selection
+  // holds no numbers; those figures are hidden rather than shown broken
+  const editorArea = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const area = editorArea.current
+    if (!area) return
+    const tidy = () => {
+      area.querySelectorAll<HTMLElement>('.luckysheet-sheet-selection-calInfo > div').forEach((figure) => {
+        const broken = /NaN|Infinity/.test(figure.textContent ?? '')
+        if ((figure.style.display === 'none') !== broken) figure.style.display = broken ? 'none' : ''
+      })
+    }
+    const watcher = new MutationObserver(tidy)
+    watcher.observe(area, { subtree: true, childList: true, characterData: true })
+    tidy()
+    return () => watcher.disconnect()
+  }, [key, sheets === null])
 
   // dev only: lets a test script drive the editor
   useEffect(() => {
@@ -293,7 +312,7 @@ export function Spreadsheets() {
       {failure != null && <div className="p-3"><ErrorNotice error={failure} /></div>}
 
       {/* the editor sizes itself to its parent, so the parent needs a real height */}
-      <div className="relative min-h-0 flex-1">
+      <div ref={editorArea} className="relative min-h-0 flex-1">
         <div className="absolute inset-0">
           <EditorBoundary key={key} onReset={() => { setSheets(null); setDirty(false) }}>
             <Workbook

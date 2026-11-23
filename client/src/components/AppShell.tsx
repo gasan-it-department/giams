@@ -1,5 +1,5 @@
 import { LicenceBanner } from '@/components/LicenceBanner'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
   BarChart3, BookOpen, Cloud, CloudOff, FileSpreadsheet, FileText, Landmark, LayoutDashboard, ListTree, LogOut, Menu, Receipt, Scale, Settings, UploadCloud,
@@ -42,18 +42,38 @@ const NAV: NavItem[] = [
   { label: 'System',      to: '/system',      icon: Settings },
 ]
 
+// the menu folded to icons or not, kept per computer across sign-ins
+const RAIL_KEY = 'giams.menu.folded'
+
+function readFolded(): boolean {
+  try {
+    return localStorage.getItem(RAIL_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
+  const [folded, setFolded] = useState(readFolded)
+
+  function toggle() {
+    setFolded((was) => {
+      try { localStorage.setItem(RAIL_KEY, was ? '0' : '1') } catch { /* stays for this visit */ }
+      return !was
+    })
+  }
+
   // Fixed viewport height with the list scrolling inside it, as Gmail does.
   // Scrolling the whole page would take the toolbar and tabs off screen, and
   // those are the controls a clerk reaches for most.
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-canvas text-ink">
-      <TopBar />
+      <TopBar folded={folded} onToggle={toggle} />
       {/* Above the working area rather than inside it, so it is present on
           every screen and scrolls away on none of them. */}
       <LicenceBanner />
       <div className="flex min-h-0 flex-1 gap-2 px-3 pb-3">
-        <Sidebar />
+        <Sidebar folded={folded} />
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg bg-surface">
           {children}
         </main>
@@ -62,12 +82,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   )
 }
 
-function TopBar() {
+function TopBar({ folded, onToggle }: { folded: boolean; onToggle: () => void }) {
   return (
     <header className="no-print flex items-center gap-4 px-4 py-3">
       <button
         type="button"
-        aria-label="Toggle navigation"
+        onClick={onToggle}
+        aria-label={folded ? 'Show the menu' : 'Fold the menu to icons'}
+        aria-expanded={!folded}
+        title={folded ? 'Show the menu' : 'Fold the menu to icons'}
         className="rounded-pill p-2 text-ink-secondary hover:bg-hover"
       >
         <Menu className="size-5" aria-hidden />
@@ -195,21 +218,29 @@ function ConnectionBadge() {
  * the server refuses the request regardless. Showing links that always fail
  * would just teach people to ignore errors.
  */
-function Sidebar() {
+function Sidebar({ folded }: { folded: boolean }) {
   const can = useAuthStore((s) => s.can)
   const visible = NAV.filter((item) => !item.permission || can(item.permission))
 
   return (
-    <nav aria-label="Main" className="no-print w-[196px] shrink-0 overflow-y-auto pr-1 pt-2">
+    <nav
+      aria-label="Main"
+      className={`no-print shrink-0 overflow-y-auto pt-2 ${folded ? 'w-[56px]' : 'w-[196px] pr-1'}`}
+    >
       <ul>
         {visible.map(({ label, to, icon: Icon }) => (
           <li key={to}>
             <NavLink
               to={to}
+              // folded, the name is only the tooltip and what a screen reader reads
+              title={folded ? label : undefined}
+              aria-label={folded ? label : undefined}
               className={({ isActive }) =>
                 // Tighter than a comfortable admin nav: Gmail's rail items are
                 // about 32px, which keeps every destination above the fold.
-                `flex items-center gap-4 rounded-r-pill py-1.5 pl-5 pr-3 text-sm ${
+                `flex items-center text-sm ${
+                  folded ? 'mx-auto size-10 justify-center rounded-pill' : 'gap-4 rounded-r-pill py-1.5 pl-5 pr-3'
+                } ${
                   isActive
                     ? 'bg-accent-soft font-medium text-accent-soft-ink'
                     : 'text-ink-secondary hover:bg-hover'
@@ -217,7 +248,7 @@ function Sidebar() {
               }
             >
               <Icon className="size-[18px] shrink-0" aria-hidden />
-              <span className="flex-1 truncate">{label}</span>
+              {!folded && <span className="flex-1 truncate">{label}</span>}
             </NavLink>
           </li>
         ))}

@@ -1,0 +1,18 @@
+/* the editor's currency button draws a yen sign; GIAMS formats pesos */
+[data-tips="Format as currency"] svg {
+  display: none;
+}
+
+[data-tips="Format as currency"] .fortune-toolbar-button::before,
+[data-tips="Format as currency"]:not(:has(.fortune-toolbar-button))::before {
+  content: "₱";
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--color-ink-secondary);
+}
