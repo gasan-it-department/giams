@@ -33,7 +33,8 @@ export function serverUrl(): string {
 
 /**
  * Turns what someone typed into an address: "192.168.1.25" becomes
- * "http://192.168.1.25:8787". Returns null for something that is not one.
+ * "http://192.168.1.25:8787", "https://192.168.1.25" becomes
+ * "https://192.168.1.25:8787". Returns null for something that is not one.
  */
 export function normaliseServer(input: string): string | null {
   let text = input.trim()
@@ -41,7 +42,8 @@ export function normaliseServer(input: string): string | null {
   if (!/^https?:\/\//i.test(text)) text = `http://${text}`
   try {
     const url = new URL(text)
-    if (!url.port && url.protocol === 'http:') url.port = '8787'
+    // GIAMS serves both on 8787; an address without a port means that one
+    if (!/:\d+$/.test(url.host)) url.port = '8787'
     return url.origin
   } catch {
     return null

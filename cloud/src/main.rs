@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
         return issue_licence();
     }
 
-    let pool = giams_db::connect(&database_url).await?;
+    let pool = giams_db::connect_replica(&database_url).await?;
 
     tracing::info!("applying database migrations");
     giams_db::migrate(&pool).await?;

@@ -70,8 +70,14 @@ pub fn find_nodes() -> Result<Vec<DiscoveredNode>, String> {
                     info.get_property_val_str(key).unwrap_or_default().to_string()
                 };
 
+                // servers older than the scheme property only spoke http
+                let scheme = match property("scheme").as_str() {
+                    "https" => "https",
+                    _ => "http",
+                };
+
                 let node = DiscoveredNode {
-                    url: format!("http://{address}:{}", info.get_port()),
+                    url: format!("{scheme}://{address}:{}", info.get_port()),
                     address,
                     port: info.get_port(),
                     node_code: property("node"),

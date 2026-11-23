@@ -41,6 +41,9 @@ pub fn announce(
     properties.insert("municipality".to_string(), municipality.to_string());
     properties.insert("tenant".to_string(), tenant_id.to_string());
     properties.insert("version".to_string(), env!("CARGO_PKG_VERSION").to_string());
+    // so a workstation that finds this server builds the right address
+    let tls = crate::tls::TlsFiles::from_env().is_some_and(|f| f.present());
+    properties.insert("scheme".to_string(), if tls { "https" } else { "http" }.to_string());
 
     let hostname = format!("{}.local.", sanitise(node_code));
 

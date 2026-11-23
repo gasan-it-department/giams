@@ -20,6 +20,8 @@ export default defineConfig({
       '/api': {
         target: process.env.GIAMS_NODE_URL ?? 'http://127.0.0.1:8787',
         changeOrigin: true,
+        // dev only: a node on its own self-signed certificate (make-cert)
+        secure: false,
       },
     },
   },

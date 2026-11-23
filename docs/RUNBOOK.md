@@ -162,7 +162,23 @@ give it. Put the two paths it prints into `.env` as `GIAMS_TLS_CERT` and
 Install the `.crt` on each workstation under **Trusted Root Certification
 Authorities**. Until that is done, every workstation shows a certificate
 warning on every visit — and a warning that appears daily is a warning nobody
-reads.
+reads. From an Administrator PowerShell on each PC:
+
+```bash
+certutil -addstore Root giams-server.crt
+```
+
+Then, in the desktop app's sign-in screen, **Server: … Change** and either
+**Find on the office network** (it picks up `https://` from the server) or type
+`https://<server address>`.
+
+If this server reaches the cloud or the licensing server over HTTPS on a GIAMS
+certificate, set `GIAMS_TLS_CA` to that certificate in `.env`; otherwise
+uploads and renewal checks are refused as untrusted.
+
+Turn it on together with `GIAMS_BIND="0.0.0.0:8787"`, when workstations first
+connect over the network. While the server only answers itself
+(`127.0.0.1`), nothing crosses the wire.
 
 A self-signed certificate proves the traffic is *encrypted*, not that the
 server is who it claims. Against someone already inside the office network who

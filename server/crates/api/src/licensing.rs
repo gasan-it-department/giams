@@ -169,9 +169,12 @@ pub async fn check_in(state: &AppState) -> CheckIn {
         }
     };
 
-    let client = match reqwest::Client::builder().timeout(std::time::Duration::from_secs(20)).build() {
+    let client = match giams_sync::http::client(std::time::Duration::from_secs(20)) {
         Ok(c) => c,
-        Err(_) => return unreachable(state).await,
+        Err(e) => {
+            tracing::warn!(error = ?e, "could not prepare the request to the licensing server");
+            return unreachable(state).await;
+        }
     };
 
     let response = match client

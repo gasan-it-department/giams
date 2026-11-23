@@ -175,9 +175,7 @@ enum SendError {
 async fn send(cloud_url: &str, body: &[u8], signature: &[u8]) -> Result<Receipt, SendError> {
     use base64::Engine as _;
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
+    let client = crate::http::client(std::time::Duration::from_secs(60))
         .map_err(|e| SendError::Unreachable(e.to_string()))?;
 
     let response = client

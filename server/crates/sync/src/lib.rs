@@ -16,6 +16,7 @@
 
 pub mod batch;
 pub mod enrolment;
+pub mod http;
 pub mod identity;
 pub mod receiver;
 pub mod shipper;

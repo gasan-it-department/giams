@@ -43,6 +43,32 @@ pub async fn connect(database_url: &str) -> anyhow::Result<PgPool> {
         .context("could not connect to the accounting database")
 }
 
+/// The cloud's pool: every connection says it's a replica.
+///
+/// The cloud applies the same migrations as the nodes, so a migration that
+/// writes data (seeding, back-filling) would make its own copies there with
+/// their own ids, and the node's copies would then be refused as duplicates.
+/// That happened with 0035. A data step in a migration checks
+/// `is_replica()` and leaves the cloud alone; the nodes upload the result.
+pub async fn connect_replica(database_url: &str) -> anyhow::Result<PgPool> {
+    PgPoolOptions::new()
+        .max_connections(16)
+        .min_connections(2)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .idle_timeout(std::time::Duration::from_secs(600))
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                sqlx::query("SELECT set_config('app.replica', 'on', false)")
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(database_url)
+        .await
+        .context("could not connect to the cloud database")
+}
+
 /// A pool whose connections are scoped to one municipality by default.
 ///
 /// A node serves exactly one municipality. Under a database account that does

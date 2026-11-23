@@ -136,9 +136,7 @@ pub async fn announce(
     secret: &str,
     request: &Enrolment,
 ) -> anyhow::Result<Enrolled> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
+    let client = crate::http::client(std::time::Duration::from_secs(30))?;
 
     let response = client
         .post(format!("{}/api/sync/enrol", cloud_url.trim_end_matches('/')))
