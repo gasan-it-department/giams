@@ -82,6 +82,7 @@ export function Login({ variant = 'accounting' }: { variant?: 'accounting' | 'ad
             error={errors.username?.message}
             {...register('username')}
             autoComplete="username"
+            placeholder="Enter your username"
             autoFocus
           />
 
@@ -91,6 +92,7 @@ export function Login({ variant = 'accounting' }: { variant?: 'accounting' | 'ad
             error={errors.password?.message}
             {...register('password')}
             autoComplete="current-password"
+            placeholder="Enter your password"
           />
 
           <button
@@ -142,9 +144,11 @@ function Field({ label, error, id, type, ...props }: FieldProps) {
           type={isPassword && shown ? 'text' : type}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : undefined}
-          className={`w-full rounded-md bg-sunken px-3.5 py-2.5 text-ink placeholder:text-ink-muted ${
+          // an outlined field on the white card reads as a place to type; the
+          // tinted fill alone blended into the card
+          className={`w-full rounded-md border bg-surface px-3.5 py-2.5 text-ink outline-none placeholder:text-ink-muted focus:border-accent-solid focus:ring-1 focus:ring-accent-solid ${
             isPassword ? 'pr-11' : ''
-          } ${error ? 'ring-1 ring-danger-ink' : ''}`}
+          } ${error ? 'border-danger-ink ring-1 ring-danger-ink' : 'border-line-strong hover:border-ink-muted'}`}
           {...props}
         />
         {isPassword && (
