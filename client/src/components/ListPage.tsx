@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ChevronLeft, ChevronRight, MoreVertical, RefreshCw, Square } from 'lucide-react'
+import { ChevronLeft, ChevronRight, RefreshCw, type LucideIcon } from 'lucide-react'
 import { SearchField } from '@/components/SearchField'
 
 /**
@@ -32,7 +32,7 @@ export interface ListTab {
   count?: number
   /** Marks work waiting on someone — the count reads as amber. */
   attention?: boolean
-  icon?: typeof Square
+  icon?: LucideIcon
 }
 
 interface ListPageProps {
@@ -64,27 +64,17 @@ export function ListPage({
   const hasNext = total !== undefined && last < total
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {/* no select-all or "more" menu: nothing on these lists is picked in bulk */}
       <div className="no-print flex items-center gap-1 px-2 py-1.5 text-ink-secondary">
-        <button
-          type="button"
-          aria-label="Select all"
-          className="rounded-pill p-2 hover:bg-hover"
-        >
-          <Square className="size-[18px]" aria-hidden />
-        </button>
-
         <button
           type="button"
           onClick={onRefresh}
           aria-label="Refresh"
+          title="Refresh"
           className="rounded-pill p-2 hover:bg-hover disabled:opacity-50"
           disabled={refreshing}
         >
           <RefreshCw className={`size-[18px] ${refreshing ? 'animate-spin' : ''}`} aria-hidden />
-        </button>
-
-        <button type="button" aria-label="More" className="rounded-pill p-2 hover:bg-hover">
-          <MoreVertical className="size-[18px]" aria-hidden />
         </button>
 
         {search && (

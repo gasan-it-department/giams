@@ -81,22 +81,28 @@ export function Books() {
             New entry
           </button>
         )}
-        <ExportButton
-          path={
-            tab === 'TB'
-              ? `/api/trial-balance/export.xlsx?as_of=${period.to}`
-              : `/api/books/${tab}/export.xlsx?from=${period.from}&to=${period.to}`
-          }
-          filename={tab === 'TB' ? 'trial-balance.xlsx' : `${tab}.xlsx`}
-        />
-        <button
-          type="button"
-          onClick={printForm}
-          className="ml-2 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-pill px-3 py-1 text-sm hover:bg-hover"
-        >
-          <Printer className="size-4" aria-hidden />
-          Print
-        </button>
+        {/* the book itself goes out on paper and in Excel; with nothing in
+            the period there's nothing to send, so the buttons stay away */}
+        {rowCount ? (
+          <>
+          <ExportButton
+            path={
+              tab === 'TB'
+                ? `/api/trial-balance/export.xlsx?as_of=${period.to}`
+                : `/api/books/${tab}/export.xlsx?from=${period.from}&to=${period.to}`
+            }
+            filename={tab === 'TB' ? 'trial-balance.xlsx' : `${tab}.xlsx`}
+          />
+          <button
+            type="button"
+            onClick={printForm}
+            className="ml-2 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-pill px-3 py-1 text-sm hover:bg-hover"
+          >
+            <Printer className="size-4" aria-hidden />
+            Print
+          </button>
+          </>
+        ) : null}
         </>
       }
     >
