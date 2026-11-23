@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BookOpen, Coins, FilePlus2, FileSpreadsheet, Printer, Receipt, Wallet } from 'lucide-react'
+import { BookOpen, Coins, FilePlus2, FileSpreadsheet, Loader2, Printer, Receipt, Wallet } from 'lucide-react'
 import { ListPage, type ListTab } from '@/components/ListPage'
 import { ErrorNotice } from '@/components/ErrorNotice'
-import { ExportButton } from '@/components/ExportButton'
+import { downloadBookExcel, downloadTrialBalanceExcel } from '@/lib/bookForms'
 import { FormHeading } from '@/components/FormHeading'
 import { Td, Th } from '@/components/FormTable'
 import { formatAmount } from '@/lib/money'
@@ -55,6 +55,25 @@ export function Books() {
   const active = tab === 'TB' ? trialBalance : book
   const rowCount = tab === 'TB' ? trialBalance.data?.lines.length : book.data?.lines.length
 
+  const [formBusy, setFormBusy] = useState(false)
+  const [formProblem, setFormProblem] = useState<unknown>(null)
+
+  async function saveForm() {
+    setFormBusy(true)
+    setFormProblem(null)
+    try {
+      if (tab === 'TB') {
+        if (trialBalance.data) await downloadTrialBalanceExcel(trialBalance.data)
+      } else if (book.data) {
+        await downloadBookExcel(tab as 'GJ' | 'CRJ' | 'CKDJ' | 'CDJ', book.data, period)
+      }
+    } catch (e) {
+      setFormProblem(e)
+    } finally {
+      setFormBusy(false)
+    }
+  }
+
   return (
     <ListPage
       tabs={TABS}
@@ -85,14 +104,16 @@ export function Books() {
             the period there's nothing to send, so the buttons stay away */}
         {rowCount ? (
           <>
-          <ExportButton
-            path={
-              tab === 'TB'
-                ? `/api/trial-balance/export.xlsx?as_of=${period.to}`
-                : `/api/books/${tab}/export.xlsx?from=${period.from}&to=${period.to}`
-            }
-            filename={tab === 'TB' ? 'trial-balance.xlsx' : `${tab}.xlsx`}
-          />
+          {/* the office's own sheet from Accounting forms.xlsx, filled in */}
+          <button
+            type="button"
+            onClick={() => void saveForm()}
+            disabled={formBusy}
+            className="ml-2 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-pill px-3 py-1 text-sm hover:bg-hover disabled:opacity-60"
+          >
+            {formBusy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <FileSpreadsheet className="size-4" aria-hidden />}
+            {formBusy ? 'Preparing…' : 'Excel form'}
+          </button>
           <button
             type="button"
             onClick={printForm}
@@ -107,6 +128,7 @@ export function Books() {
       }
     >
       {active.error && <div className="p-4"><ErrorNotice error={active.error} /></div>}
+      {formProblem != null && <div className="no-print p-4"><ErrorNotice error={formProblem} /></div>}
       {active.isPending && <p className="px-4 py-6 text-ink-muted">Loading…</p>}
 
       {tab === 'TB'

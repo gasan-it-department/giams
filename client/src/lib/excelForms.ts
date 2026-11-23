@@ -102,7 +102,7 @@ export async function downloadJevExcel(data: JevExcelData): Promise<void> {
   await save(workbook, `${name}.xlsx`)
 }
 
-async function loadTemplate(): Promise<ExcelJS.Workbook> {
+export async function loadTemplate(): Promise<ExcelJS.Workbook> {
   const response = await fetch(TEMPLATE_URL)
   if (!response.ok) {
     throw new Error('The form template could not be loaded. Reload the page and try again.')
@@ -115,7 +115,7 @@ async function loadTemplate(): Promise<ExcelJS.Workbook> {
   return workbook
 }
 
-async function save(workbook: ExcelJS.Workbook, filename: string): Promise<void> {
+export async function save(workbook: ExcelJS.Workbook, filename: string): Promise<void> {
   const buffer = await workbook.xlsx.writeBuffer()
   saveFile(new Blob([buffer], { type: XLSX_TYPE }), filename)
 }
@@ -129,11 +129,11 @@ async function save(workbook: ExcelJS.Workbook, filename: string): Promise<void>
  * here — the totals arrive already summed in exact centavos — and a peso
  * figure of up to fifteen digits survives the conversion unchanged.
  */
-function money(cell: ExcelJS.Cell, amount: Amount): void {
+export function money(cell: ExcelJS.Cell, amount: Amount): void {
   cell.value = Number(amount) // check-money: allow — written once to a cell Excel keeps as a double
   cell.numFmt = '#,##0.00'
 }
 
-function isPositive(amount: Amount): boolean {
+export function isPositive(amount: Amount): boolean {
   return !!amount && amount !== '0.00' && !amount.startsWith('-')
 }
