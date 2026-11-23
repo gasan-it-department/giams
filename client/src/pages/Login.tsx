@@ -61,9 +61,9 @@ export function Login({ variant = 'accounting' }: { variant?: 'accounting' | 'ad
               : <Building2 className="size-7" aria-hidden />}
           </div>
           <h1 className="text-xl font-medium">{admin ? 'GIAMS Administration' : 'Accounting Management System'}</h1>
-          <p className="mt-1 text-ink-secondary">
-            {admin ? 'Licence keys and user accounts' : 'Municipality of Gasan'}
-          </p>
+          {admin && (
+            <p className="mt-1 text-ink-secondary">Licence keys and user accounts</p>
+          )}
         </div>
 
         <form
