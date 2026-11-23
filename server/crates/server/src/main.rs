@@ -32,6 +32,16 @@ fn main() -> anyhow::Result<()> {
         return service::run();
     }
 
+    // a scheduled task (the nightly backup) starts in System32; .env, the keys
+    // and backups\ live beside the exe, so work from there when .env isn't here
+    if !std::path::Path::new(".env").exists() {
+        if let Some(folder) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
+            if folder.join(".env").exists() {
+                let _ = std::env::set_current_dir(folder);
+            }
+        }
+    }
+
     init(None);
     tokio::runtime::Runtime::new()
         .context("could not start the server's runtime")?
